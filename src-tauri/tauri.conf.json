@@ -10,21 +10,7 @@
   },
   "app": {
     "withGlobalTauri": true,
-    "windows": [
-      {
-        "label": "main",
-        "title": "FloatView",
-        "width": 800,
-        "height": 450,
-        "resizable": true,
-        "fullscreen": false,
-        "decorations": false,
-        "transparent": true,
-        "alwaysOnTop": true,
-        "center": false,
-        "url": "index.html"
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null,
       "dangerousDisableAssetCspModification": true
@@ -37,6 +23,7 @@
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
+      "icons/icon.icns",
       "icons/icon.ico",
       "icons/icon.png"
     ],
@@ -47,6 +34,9 @@
       "wix": {
         "language": "en-US"
       }
+    },
+    "macOS": {
+      "minimumSystemVersion": "10.13"
     }
   },
   "plugins": {

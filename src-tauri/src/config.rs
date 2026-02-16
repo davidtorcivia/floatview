@@ -56,6 +56,12 @@ pub struct AppConfig {
     pub audio_device_id: Option<String>,
     pub launch_at_startup: bool,
     pub hotkeys: HotkeyConfig,
+    #[serde(default = "default_home_url")]
+    pub home_url: String,
+}
+
+fn default_home_url() -> String {
+    "https://www.google.com".to_string()
 }
 
 impl Default for AppConfig {
@@ -67,6 +73,7 @@ impl Default for AppConfig {
             audio_device_id: None,
             launch_at_startup: false,
             hotkeys: HotkeyConfig::default(),
+            home_url: default_home_url(),
         }
     }
 }

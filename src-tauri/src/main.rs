@@ -4,19 +4,27 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::{
-    AppHandle, Manager, Runtime, WebviewWindow,
+    AppHandle, Emitter, Manager, Runtime, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter,
 };
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
-mod click_through;
 mod config;
+mod opacity;
 
 use config::AppConfig;
 
 const INJECTION_SCRIPT: &str = include_str!("injection.js");
+
+#[cfg(target_os = "windows")]
+const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0";
+
+#[cfg(target_os = "macos")]
+const USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 pub struct AppState {
     config: Mutex<AppConfig>,
@@ -108,26 +116,7 @@ async fn set_opacity(
     opacity: f64,
 ) -> Result<(), String> {
     let opacity = opacity.clamp(0.1, 1.0);
-    
-    #[cfg(target_os = "windows")]
-    {
-        use windows::Win32::Foundation::HWND;
-        use windows::Win32::UI::WindowsAndMessaging::{
-            SetLayeredWindowAttributes, GetWindowLongPtrW, SetWindowLongPtrW,
-            GWL_EXSTYLE, WS_EX_LAYERED, LAYERED_WINDOW_ATTRIBUTES_FLAGS,
-        };
-
-        let hwnd_value = window.hwnd().map_err(|e| e.to_string())?.0;
-        unsafe {
-            let hwnd = HWND(hwnd_value);
-            // Ensure WS_EX_LAYERED is set for opacity to work
-            let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-            if ex_style & WS_EX_LAYERED.0 as isize == 0 {
-                SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex_style | WS_EX_LAYERED.0 as isize);
-            }
-            let _ = SetLayeredWindowAttributes(hwnd, windows::Win32::Foundation::COLORREF(0), (opacity * 255.0) as u8, LAYERED_WINDOW_ATTRIBUTES_FLAGS(2));
-        }
-    }
+    opacity::set_window_opacity(&window, opacity);
 
     let mut config = state.config.lock().map_err(|e| e.to_string())?;
     config.window.opacity = opacity;
@@ -155,11 +144,7 @@ async fn toggle_locked(
         new_value
     };
 
-    #[cfg(target_os = "windows")]
-    {
-        let hwnd = window.hwnd().map_err(|e| e.to_string())?;
-        click_through::set_click_through_by_hwnd(hwnd, new_value);
-    }
+    window.set_ignore_cursor_events(new_value).map_err(|e| e.to_string())?;
 
     app.emit("locked-changed", new_value).map_err(|e| e.to_string())?;
     Ok(new_value)
@@ -244,19 +229,49 @@ async fn exit_click_through(
         let config_clone = config.clone();
         drop(config);
         save_config(&state.config_path, &config_clone);
-        
-        #[cfg(target_os = "windows")]
-        {
-            let hwnd = window.hwnd().map_err(|e| e.to_string())?;
-            click_through::set_click_through_by_hwnd(hwnd, false);
-        }
-        
+
+        window.set_ignore_cursor_events(false).map_err(|e| e.to_string())?;
+
         app.emit("locked-changed", false).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
 
+#[tauri::command]
+async fn navigate_home(
+    window: WebviewWindow,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let home_url = {
+        let mut config = state.config.lock().map_err(|e| e.to_string())?;
+        config.last_url = None;
+        let config_clone = config.clone();
+        drop(config);
+        save_config(&state.config_path, &config_clone);
+        config_clone.home_url.clone()
+    };
+    let _ = window.eval("window.stop()");
+    window
+        .eval(&format!("window.location.href = {:?}", home_url))
+        .map_err(|e| e.to_string())
+}
+
 // Direct action helpers (called from hotkeys and tray menu, no JS round-trip)
+fn do_navigate_home<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(window) = app.get_webview_window("main") {
+        let state = app.state::<AppState>();
+        let home_url = if let Ok(mut config) = state.config.lock() {
+            config.last_url = None;
+            save_config(&state.config_path, &config);
+            config.home_url.clone()
+        } else {
+            "https://www.google.com".to_string()
+        };
+        let _ = window.eval("window.stop()");
+        let _ = window.eval(&format!("window.location.href = {:?}", home_url));
+    }
+}
+
 fn do_toggle_always_on_top<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window("main") {
         let current = window.is_always_on_top().unwrap_or(false);
@@ -288,12 +303,7 @@ fn do_toggle_locked<R: Runtime>(app: &AppHandle<R>) {
             nv
         };
 
-        #[cfg(target_os = "windows")]
-        {
-            if let Ok(hwnd) = window.hwnd() {
-                click_through::set_click_through_by_hwnd(hwnd, new_value);
-            }
-        }
+        let _ = window.set_ignore_cursor_events(new_value);
 
         let _ = app.emit("locked-changed", new_value);
         let _ = window.eval(&format!(
@@ -321,12 +331,7 @@ fn do_exit_click_through<R: Runtime>(app: &AppHandle<R>) {
             save_config(&state.config_path, &config);
         }
 
-        #[cfg(target_os = "windows")]
-        {
-            if let Ok(hwnd) = window.hwnd() {
-                click_through::set_click_through_by_hwnd(hwnd, false);
-            }
-        }
+        let _ = window.set_ignore_cursor_events(false);
 
         let _ = app.emit("locked-changed", false);
         let _ = window.eval("if(window.__floatViewUpdate) window.__floatViewUpdate('locked', false)");
@@ -344,29 +349,7 @@ fn do_opacity_change<R: Runtime>(app: &AppHandle<R>, delta: f64) {
             op
         };
 
-        #[cfg(target_os = "windows")]
-        {
-            use windows::Win32::Foundation::HWND;
-            use windows::Win32::UI::WindowsAndMessaging::{
-                SetLayeredWindowAttributes, GetWindowLongPtrW, SetWindowLongPtrW,
-                GWL_EXSTYLE, WS_EX_LAYERED, LAYERED_WINDOW_ATTRIBUTES_FLAGS,
-            };
-            if let Ok(hwnd_value) = window.hwnd() {
-                unsafe {
-                    let hwnd = HWND(hwnd_value.0);
-                    let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-                    if ex_style & WS_EX_LAYERED.0 as isize == 0 {
-                        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex_style | WS_EX_LAYERED.0 as isize);
-                    }
-                    let _ = SetLayeredWindowAttributes(
-                        hwnd,
-                        windows::Win32::Foundation::COLORREF(0),
-                        (new_opacity * 255.0) as u8,
-                        LAYERED_WINDOW_ATTRIBUTES_FLAGS(2),
-                    );
-                }
-            }
-        }
+        opacity::set_window_opacity(&window, new_opacity);
 
         let _ = app.emit("opacity-changed", new_opacity);
         let _ = window.eval(&format!(
@@ -475,13 +458,14 @@ fn register_hotkeys<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::e
 
 fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::Error>> {
     let settings = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
+    let go_home = MenuItem::with_id(app, "go_home", "Go Home", true, None::<&str>)?;
     let toggle_top = MenuItem::with_id(app, "toggle_top", "Toggle Always on Top", true, None::<&str>)?;
     let toggle_lock = MenuItem::with_id(app, "toggle_lock", "Toggle Click-Through", true, None::<&str>)?;
     let exit_lock = MenuItem::with_id(app, "exit_lock", "Exit Click-Through Mode", true, None::<&str>)?;
     let show = MenuItem::with_id(app, "show", "Show/Hide Window", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
-    let menu = Menu::with_items(app, &[&settings, &toggle_top, &toggle_lock, &exit_lock, &show, &quit])?;
+    let menu = Menu::with_items(app, &[&settings, &go_home, &toggle_top, &toggle_lock, &exit_lock, &show, &quit])?;
 
     let icon = app.default_window_icon().cloned()
         .expect("app should have a default window icon");
@@ -498,6 +482,9 @@ fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::
                     let _ = app.emit("open-settings", ());
                     let _ = window.eval("if(window.__floatViewUpdate) window.__floatViewUpdate('open_settings', true)");
                 }
+            }
+            "go_home" => {
+                do_navigate_home(app);
             }
             "toggle_top" => {
                 do_toggle_always_on_top(app);
@@ -548,27 +535,7 @@ fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::
 
 fn apply_window_state(window: &WebviewWindow, config: &AppConfig) {
     let _ = window.set_always_on_top(config.window.always_on_top);
-    
-    #[cfg(target_os = "windows")]
-    {
-        use windows::Win32::Foundation::HWND;
-        use windows::Win32::UI::WindowsAndMessaging::{
-            SetLayeredWindowAttributes, GetWindowLongPtrW, SetWindowLongPtrW,
-            GWL_EXSTYLE, WS_EX_LAYERED, LAYERED_WINDOW_ATTRIBUTES_FLAGS,
-        };
-
-        if let Ok(hwnd_value) = window.hwnd() {
-            unsafe {
-                let hwnd = HWND(hwnd_value.0);
-                // Ensure WS_EX_LAYERED is set for opacity to work
-                let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-                if ex_style & WS_EX_LAYERED.0 as isize == 0 {
-                    SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex_style | WS_EX_LAYERED.0 as isize);
-                }
-                let _ = SetLayeredWindowAttributes(hwnd, windows::Win32::Foundation::COLORREF(0), (config.window.opacity * 255.0) as u8, LAYERED_WINDOW_ATTRIBUTES_FLAGS(2));
-            }
-        }
-    }
+    opacity::set_window_opacity(window, config.window.opacity);
 
     if config.window.width > 0 && config.window.height > 0 {
         let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
@@ -581,61 +548,6 @@ fn apply_window_state(window: &WebviewWindow, config: &AppConfig) {
         x: config.window.x,
         y: config.window.y,
     }));
-}
-
-#[cfg(target_os = "windows")]
-fn inject_script_on_document_created(window: &WebviewWindow) -> Result<(), String> {
-    use webview2_com::AddScriptToExecuteOnDocumentCreatedCompletedHandler;
-    use windows::core::HSTRING;
-
-    let script = INJECTION_SCRIPT.to_string();
-    let error_msg = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
-    let error_msg_clone = error_msg.clone();
-
-    window.with_webview(move |webview| {
-        unsafe {
-            let controller = webview.controller();
-            if let Ok(core_webview) = controller.CoreWebView2() {
-                use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings2;
-                use windows::core::Interface;
-
-                // Set User Agent to match Edge for Direct Play support
-                if let Ok(settings) = core_webview.Settings() {
-                    if let Ok(settings2) = settings.cast::<ICoreWebView2Settings2>() {
-                        let user_agent = HSTRING::from("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0");
-                        let _ = settings2.SetUserAgent(&user_agent);
-                    }
-                }
-
-                // Inject the control strip script
-                if let Err(e) = AddScriptToExecuteOnDocumentCreatedCompletedHandler::wait_for_async_operation(
-                    Box::new(move |handler| {
-                        let js = HSTRING::from(script.as_str());
-                        core_webview
-                            .AddScriptToExecuteOnDocumentCreated(&js, &handler)
-                            .map_err(webview2_com::Error::WindowsError)
-                    }),
-                    Box::new(|error_code, _id| error_code),
-                ) {
-                    if let Ok(mut msg) = error_msg_clone.lock() {
-                        *msg = Some(format!("Failed to inject script: {:?}", e));
-                    }
-                }
-            }
-        }
-    }).map_err(|e| e.to_string())?;
-
-    if let Ok(mut msg) = error_msg.lock() {
-        if let Some(err) = msg.take() {
-            return Err(err);
-        }
-    }
-    Ok(())
-}
-
-#[cfg(not(target_os = "windows"))]
-fn inject_script_on_document_created(_window: &WebviewWindow) -> Result<(), String> {
-    Ok(())
 }
 
 fn run() {
@@ -658,31 +570,39 @@ fn run() {
             };
             app.manage(state);
 
-            if let Some(window) = app.get_webview_window("main") {
-                apply_window_state(&window, &config);
+            let window = WebviewWindowBuilder::new(
+                app,
+                "main",
+                WebviewUrl::App("index.html".into()),
+            )
+            .title("FloatView")
+            .inner_size(800.0, 450.0)
+            .decorations(false)
+            .transparent(true)
+            .always_on_top(true)
+            .initialization_script(INJECTION_SCRIPT)
+            .user_agent(USER_AGENT)
+            .build()?;
 
-                if let Err(e) = inject_script_on_document_created(&window) {
-                    eprintln!("Warning: Failed to inject script on document created: {}", e);
-                }
+            apply_window_state(&window, &config);
 
-                if let Some(ref url) = config.last_url {
-                    if !url.is_empty() {
-                        let url = url.clone();
-                        let window_clone = window.clone();
-                        std::thread::spawn(move || {
-                            std::thread::sleep(std::time::Duration::from_millis(100));
-                            let _ = window_clone.eval(&format!("window.location.href = {:?}", url));
-                        });
-                    }
-                }
-
+            let nav_url = config.last_url.clone()
+                .filter(|u| !u.is_empty())
+                .unwrap_or_else(|| config.home_url.clone());
+            if !nav_url.is_empty() {
                 let window_clone = window.clone();
-                window.on_window_event(move |event| {
-                    if let tauri::WindowEvent::CloseRequested { .. } = event {
-                        let _ = window_clone.emit("save-state", ());
-                    }
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    let _ = window_clone.eval(&format!("window.location.href = {:?}", nav_url));
                 });
             }
+
+            let window_clone = window.clone();
+            window.on_window_event(move |event| {
+                if let tauri::WindowEvent::CloseRequested { .. } = event {
+                    let _ = window_clone.emit("save-state", ());
+                }
+            });
 
             register_hotkeys(&app.handle())?;
             setup_tray(&app.handle())?;
@@ -693,6 +613,7 @@ fn run() {
             get_config,
             update_config,
             navigate,
+            navigate_home,
             toggle_always_on_top,
             set_opacity,
             toggle_locked,

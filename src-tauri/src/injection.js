@@ -498,6 +498,7 @@
         settings: `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>`,
         minimize: `<svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
         close: `<svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
+        home: `<svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`,
     };
 
     const strip = document.createElement('div');
@@ -508,6 +509,7 @@
             <button class="btn" id="btn-recent" title="Recent URLs">${icons.recent}</button>
             <div class="recent-dropdown" id="recent-dropdown"></div>
         </div>
+        <button class="btn" id="btn-home" title="Go Home">${icons.home}</button>
         <input type="text" class="url-display" id="url-input" placeholder="Enter URL to load...">
         <button class="btn" id="btn-lock" title="Click-through mode (Alt+Shift+D)">${icons.lock}</button>
         <div class="divider"></div>
@@ -564,6 +566,14 @@
         </div>
 
         <div class="settings-section">
+            <div class="settings-section-title">Navigation</div>
+            <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:8px;">
+                <span class="settings-label">Home URL</span>
+                <input type="text" class="url-display" id="setting-home-url" placeholder="https://www.google.com" style="width:100%;height:36px;">
+            </div>
+        </div>
+
+        <div class="settings-section">
             <div class="settings-section-title">Data</div>
             <div class="settings-row">
                 <span class="settings-label">Clear Recent URLs</span>
@@ -601,6 +611,7 @@
     const btnLock = strip.querySelector('#btn-lock');
     const opacitySlider = strip.querySelector('#opacity-slider');
     const btnSettings = strip.querySelector('#btn-settings');
+    const btnHome = strip.querySelector('#btn-home');
     const btnMinimize = strip.querySelector('#btn-minimize');
     const btnClose = strip.querySelector('#btn-close');
 
@@ -793,6 +804,10 @@
         }
     });
 
+    btnHome.addEventListener('click', async () => {
+        await invoke('navigate_home');
+    });
+
     btnLock.addEventListener('click', async () => {
         const result = await invoke('toggle_locked');
         if (result !== null) {
@@ -818,6 +833,7 @@
     const settingLocked = settingsModal.querySelector('#setting-locked');
     const settingOpacity = settingsModal.querySelector('#setting-opacity');
     const settingOpacityValue = settingsModal.querySelector('#setting-opacity-value');
+    const settingHomeUrl = settingsModal.querySelector('#setting-home-url');
     const btnClearRecent = settingsModal.querySelector('#btn-clear-recent');
     const btnCloseSettings = settingsModal.querySelector('#btn-close-settings');
     const hotkeyOntop = settingsModal.querySelector('#hotkey-ontop');
@@ -835,6 +851,7 @@
                 hotkeyLocked.textContent = config.hotkeys.toggle_locked || 'Alt+Shift+D';
                 hotkeyVisibility.textContent = config.hotkeys.toggle_visibility || 'Alt+Shift+H';
             }
+            settingHomeUrl.value = config.home_url || 'https://www.google.com';
         }
         settingsModal.classList.remove('hidden');
         modalOverlay.classList.add('visible');
@@ -844,6 +861,13 @@
         settingsModal.classList.add('hidden');
         modalOverlay.classList.remove('visible');
     }
+
+    settingHomeUrl.addEventListener('change', async () => {
+        if (config) {
+            config.home_url = settingHomeUrl.value.trim() || 'https://www.google.com';
+            await invoke('update_config', { config });
+        }
+    });
 
     settingOntop.addEventListener('click', async () => {
         const result = await invoke('toggle_always_on_top');
@@ -1091,31 +1115,40 @@
         for (const mutation of mutations) {
             for (const node of mutation.removedNodes) {
                 if (node === container || container.contains(node)) {
-                    document.body.prepend(container);
+                    if (document.body) document.body.prepend(container);
                     return;
                 }
             }
         }
     });
 
-    const init = () => {
-        if (document.body) {
-            document.body.prepend(container);
-            observer.observe(document.body, { childList: true, subtree: true });
-            initConfig();
-        } else {
-            requestAnimationFrame(init);
-        }
-    };
+    // Aggressive init: poll with setInterval instead of waiting for DOMContentLoaded.
+    // setInterval fires even when the page is stuck loading (unlike rAF which needs paint
+    // and DOMContentLoaded which needs all scripts/stylesheets parsed).
+    let _initialized = false;
+    function tryInit() {
+        if (_initialized) return true;
+        if (!document.body) return false;
+        document.body.prepend(container);
+        observer.observe(document.body, { childList: true, subtree: true });
+        initConfig();
+        _initialized = true;
+        return true;
+    }
 
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init);
-    } else {
-        init();
+    if (!tryInit()) {
+        const pollTimer = setInterval(() => {
+            if (tryInit()) clearInterval(pollTimer);
+        }, 50);
+        document.addEventListener('DOMContentLoaded', () => {
+            clearInterval(pollTimer);
+            tryInit();
+        });
+        setTimeout(() => clearInterval(pollTimer), 30000);
     }
 
     window.addEventListener('pageshow', () => {
-        if (!document.body.contains(container)) {
+        if (document.body && !document.body.contains(container)) {
             document.body.prepend(container);
         }
     });
