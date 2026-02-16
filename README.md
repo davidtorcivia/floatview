@@ -24,7 +24,7 @@ Launch FloatView. You'll see the landing page with a URL input field and a list 
 
 ### 2. Enter a URL
 
-Type the address of your media server (e.g., `http://192.168.1.131:8096` for Emby/Jellyfin) and press **Enter** or click **Go**. FloatView navigates to it like a regular browser.
+Type the address of your media server (e.g., `http://192.168.1.XXX:8096` for Emby/Jellyfin) and press **Enter** or click **Go**. FloatView navigates to it like a regular browser.
 
 ### 3. Discover the control strip
 
@@ -109,8 +109,8 @@ Settings are stored in `%APPDATA%\com.floatview.app\config.json` and are managed
     "opacity": 1.0,
     "locked": false
   },
-  "last_url": "http://192.168.1.131:8096",
-  "recent_urls": ["http://192.168.1.131:8096"],
+  "last_url": "http://192.168.1.XXX:8096",
+  "recent_urls": ["http://192.168.1.XXX:8096"],
   "hotkeys": {
     "toggle_on_top": "Alt+Shift+T",
     "toggle_locked": "Alt+Shift+D",

@@ -177,7 +177,7 @@ The ideal path is the web-standard `setSinkId()` API on `HTMLMediaElement`. Chro
 
 **Challenges:**
 
-- `setSinkId()` requires a **secure context** (HTTPS or localhost). Emby at `http://192.168.1.131:8096` is not a secure context. Host-side JS injection does not bypass this requirement — secure context is a web platform security constraint, not a permissions issue.
+- `setSinkId()` requires a **secure context** (HTTPS or localhost). Emby at `http://192.168.1.XXX:8096` is not a secure context. Host-side JS injection does not bypass this requirement — secure context is a web platform security constraint, not a permissions issue.
 - `selectAudioOutput()` requires **user activation** (a click). Cannot be silently granted from Rust.
 - WASAPI routing from Rust is fragile: WebView2 spawns child processes for rendering, identifying the correct audio session is unreliable.
 
@@ -223,7 +223,7 @@ On hover (with ~500ms dwell during video playback to prevent accidental triggers
 
 ```
 ┌──────────────────────────────────────────────┐
-│ 📌 192.168.1.131:8096/web/...    🔓 ⚙ — ✕   │  ← injected Shadow DOM strip
+│ 📌 192.168.1.XXX:8096/web/...    🔓 ⚙ — ✕   │  ← injected Shadow DOM strip
 ├──────────────────────────────────────────────┤
 │                                              │
 │        (page content: Emby etc)              │
@@ -298,7 +298,7 @@ Unsigned Windows binaries trigger SmartScreen warnings and may face friction in 
     "opacity": 1.0,
     "locked": false
   },
-  "last_url": "http://192.168.1.131:8096",
+  "last_url": "http://192.168.1.XXX:8096",
   "recent_urls": [],
   "audio_device_id": null,
   "launch_at_startup": false,
