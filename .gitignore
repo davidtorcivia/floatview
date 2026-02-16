@@ -1,0 +1,39 @@
+# Build artifacts
+target/
+dist/
+
+# Dependencies
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tauri
+src-tauri/target/
+
+# Config (user-specific)
+*.local.json
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# PowerShell scripts (development only)
+*.ps1
+
+# Claude Code
+.claude/
+.crush/
+
+# Tauri generated schemas (regenerated on build)
+src-tauri/gen/
