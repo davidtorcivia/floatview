@@ -2,7 +2,8 @@
 name = "floatview"
 version = "0.2.0"
 description = "A minimal floating browser window for streaming media"
-authors = ["you"]
+authors = ["David Torcivia"]
+license = "MIT"
 edition = "2021"
 
 [build-dependencies]

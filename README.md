@@ -181,6 +181,16 @@ src-tauri/src/injection.js  -- Shadow DOM control strip + tutorial (~1550 lines)
 
 Electron bundles its own Chromium, which breaks HDR tone mapping on Windows. FloatView uses the system webview (WebView2 on Windows, WebKit on macOS), giving you native HDR support, automatic updates via the OS, and a binary that's 50x smaller.
 
+## Uninstallation
+
+- **Windows MSI:** Uninstall from **Settings > Apps > Installed apps** or **Control Panel > Programs and Features**
+- **Windows EXE (NSIS):** Uninstall from **Settings > Apps > Installed apps**, or run the uninstaller from the Start Menu
+- **macOS:** Drag FloatView.app from `/Applications` to the Trash
+
+Configuration files are stored separately and not removed by default:
+- **Windows:** `%APPDATA%\com.floatview.app\`
+- **macOS:** `~/Library/Application Support/com.floatview.app/`
+
 ## Known Limitations
 
 - **Click-through mode is invisible** -- The control strip hides; use hotkey or tray to exit
@@ -188,6 +198,20 @@ Electron bundles its own Chromium, which breaks HDR tone mapping on Windows. Flo
 - **No audio device routing** -- WebView's `setSinkId()` requires HTTPS origins
 - **macOS** -- Some global hotkey combinations may conflict with system shortcuts
 
+## Privacy
+
+This program will not transfer any information to other networked systems unless specifically requested by the user. The only automated network request is the optional **Check for Updates** feature in Settings, which queries the [GitHub Releases API](https://github.com/davidtorcivia/floatview/releases) to check for new versions. No personal data, telemetry, or usage statistics are collected or transmitted.
+
+## Code Signing
+
+Windows binaries are signed through the [SignPath Foundation](https://signpath.org) free code signing program for open-source software.
+
+Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
 ## License
 
 [MIT](LICENSE)
+
+## Maintainers
+
+- [David Torcivia](https://github.com/davidtorcivia) -- Author and maintainer
