@@ -60,20 +60,20 @@ The strip hides automatically when your mouse leaves it.
 
 These work globally, even when FloatView isn't focused:
 
-| Shortcut | Action |
-|---|---|
-| `Alt+Shift+T` | Toggle always-on-top |
-| `Alt+Shift+D` | Toggle click-through mode |
-| `Alt+Shift+Up` | Increase opacity |
-| `Alt+Shift+Down` | Decrease opacity |
-| `Alt+Shift+H` | Show/hide window |
+| Action | Windows | macOS |
+|---|---|---|
+| Toggle always-on-top | `Alt+Shift+T` | `⌥⇧T` |
+| Toggle click-through mode | `Alt+Shift+D` | `⌥⇧D` |
+| Increase opacity | `Alt+Shift+Up` | `⌥⇧Up` |
+| Decrease opacity | `Alt+Shift+Down` | `⌥⇧Down` |
+| Show/hide window | `Alt+Shift+H` | `⌥⇧H` |
 
 These only work when the window is focused:
 
-| Shortcut | Action |
-|---|---|
-| `Ctrl+L` | Show control strip and focus URL bar |
-| `Escape` | Hide control strip |
+| Action | Windows | macOS |
+|---|---|---|
+| Show control strip and focus URL bar | `Ctrl+L` | `⌘L` |
+| Hide control strip | `Escape` | `Escape` |
 
 ### 6. System tray
 

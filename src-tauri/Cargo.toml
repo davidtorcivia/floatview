@@ -1,6 +1,6 @@
 [package]
 name = "floatview"
-version = "0.3.0"
+version = "0.3.1"
 description = "A minimal floating browser window for streaming media"
 authors = ["David Torcivia"]
 license = "MIT"
