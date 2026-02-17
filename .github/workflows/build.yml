@@ -66,6 +66,30 @@ jobs:
           includeUpdaterJson: true
           args: ${{ matrix.args }}
 
+      # Upload .sig files BEFORE rename so the rename step can find and rename them too
+      - name: Upload Windows updater signature
+        if: matrix.platform == 'windows-latest'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.ref_type == 'tag' && github.ref_name || 'nightly' }}"
+          SIG_FILE=$(find src-tauri/target/release/bundle/nsis -name "*x64-setup.exe.sig" 2>/dev/null | head -1)
+          if [ -n "$SIG_FILE" ]; then
+            gh release upload "$TAG" "$SIG_FILE" --clobber
+          fi
+        shell: bash
+
+      - name: Upload macOS updater signature
+        if: matrix.platform == 'macos-latest'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.ref_type == 'tag' && github.ref_name || 'nightly' }}"
+          SIG_FILE=$(find src-tauri/target -name "*.app.tar.gz.sig" 2>/dev/null | head -1)
+          if [ -n "$SIG_FILE" ]; then
+            gh release upload "$TAG" "$SIG_FILE" --clobber
+          fi
+
       - name: Rename Windows portable exe
         if: matrix.platform == 'windows-latest'
         env:
@@ -97,29 +121,6 @@ jobs:
           fi
         shell: bash
 
-      # Upload updater artifacts (zip + sig) so the updater job can build latest.json
-      - name: Upload Windows updater artifacts
-        if: matrix.platform == 'windows-latest'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="${{ github.ref_type == 'tag' && github.ref_name || 'nightly' }}"
-          for f in $(find src-tauri/target/release/bundle/nsis -name "*.nsis.zip" -o -name "*.nsis.zip.sig" 2>/dev/null); do
-            gh release upload "$TAG" "$f" --clobber
-          done
-        shell: bash
-
-      - name: Upload macOS updater artifacts
-        if: matrix.platform == 'macos-latest'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="${{ github.ref_type == 'tag' && github.ref_name || 'nightly' }}"
-          SIG_FILE=$(find src-tauri/target -name "*.app.tar.gz.sig" 2>/dev/null | head -1)
-          if [ -n "$SIG_FILE" ]; then
-            gh release upload "$TAG" "$SIG_FILE" --clobber
-          fi
-
   updater:
     needs: build
     runs-on: ubuntu-latest
@@ -146,10 +147,11 @@ jobs:
           # Download signature files from release
           mkdir -p /tmp/sigs
           gh release download "$TAG" --pattern "*.sig" --dir /tmp/sigs --repo "$REPO" 2>/dev/null || true
+          ls -la /tmp/sigs/
 
-          # Read Windows NSIS signature
+          # Read Windows exe signature
           WIN_SIG=""
-          WIN_SIG_FILE=$(ls /tmp/sigs/*.nsis.zip.sig 2>/dev/null | head -1)
+          WIN_SIG_FILE=$(ls /tmp/sigs/*portable.exe.sig /tmp/sigs/*setup.exe.sig 2>/dev/null | head -1)
           if [ -n "$WIN_SIG_FILE" ]; then
             WIN_SIG=$(cat "$WIN_SIG_FILE")
           fi
@@ -161,42 +163,39 @@ jobs:
             MAC_SIG=$(cat "$MAC_SIG_FILE")
           fi
 
-          # Windows: updater downloads the .nsis.zip, not the .exe
-          WIN_ZIP=$(gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name' | grep '\.nsis\.zip$' || true)
-          WIN_URL="https://github.com/${REPO}/releases/download/${TAG}/${WIN_ZIP}"
+          # Windows: find the exe (portable or setup)
+          WIN_EXE=$(gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name' | grep 'x64-portable\.exe$' || true)
+          if [ -z "$WIN_EXE" ]; then
+            WIN_EXE=$(gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name' | grep 'x64-setup\.exe$' || true)
+          fi
+          WIN_URL="https://github.com/${REPO}/releases/download/${TAG}/${WIN_EXE}"
 
-          # macOS: updater downloads the .app.tar.gz
+          # macOS: find the .app.tar.gz
           MAC_TAR=$(gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name' | grep '\.app\.tar\.gz$' || true)
           MAC_URL="https://github.com/${REPO}/releases/download/${TAG}/${MAC_TAR}"
 
           PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-          # Build latest.json
-          cat > /tmp/latest.json << ENDJSON
-          {
-            "version": "${VERSION}",
-            "notes": "FloatView ${TAG}",
-            "pub_date": "${PUB_DATE}",
-            "platforms": {
-              "windows-x86_64": {
-                "signature": "${WIN_SIG}",
-                "url": "${WIN_URL}"
-              },
-              "darwin-universal": {
-                "signature": "${MAC_SIG}",
-                "url": "${MAC_URL}"
-              },
-              "darwin-x86_64": {
-                "signature": "${MAC_SIG}",
-                "url": "${MAC_URL}"
-              },
-              "darwin-aarch64": {
-                "signature": "${MAC_SIG}",
-                "url": "${MAC_URL}"
+          # Build latest.json using jq for proper JSON encoding
+          jq -n \
+            --arg version "$VERSION" \
+            --arg notes "FloatView ${TAG}" \
+            --arg pub_date "$PUB_DATE" \
+            --arg win_sig "$WIN_SIG" \
+            --arg win_url "$WIN_URL" \
+            --arg mac_sig "$MAC_SIG" \
+            --arg mac_url "$MAC_URL" \
+            '{
+              version: $version,
+              notes: $notes,
+              pub_date: $pub_date,
+              platforms: {
+                "windows-x86_64": { signature: $win_sig, url: $win_url },
+                "darwin-universal": { signature: $mac_sig, url: $mac_url },
+                "darwin-x86_64": { signature: $mac_sig, url: $mac_url },
+                "darwin-aarch64": { signature: $mac_sig, url: $mac_url }
               }
-            }
-          }
-          ENDJSON
+            }' > /tmp/latest.json
 
           echo "Generated latest.json:"
           cat /tmp/latest.json

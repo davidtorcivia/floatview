@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "FloatView",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "identifier": "com.floatview.app",
   "build": {
     "frontendDist": "../src",
@@ -19,7 +19,6 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "createUpdaterArtifacts": true,
     "copyright": "Copyright (c) 2026 David Torcivia",
     "shortDescription": "A lightweight, always-on-top floating browser window for streaming media",
     "icon": [
