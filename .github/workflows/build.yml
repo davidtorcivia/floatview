@@ -51,7 +51,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'nightly' }}
           releaseName: ${{ github.ref_type == 'tag' && format('FloatView {0}', github.ref_name) || 'FloatView Nightly' }}
@@ -65,38 +65,6 @@ jobs:
           prerelease: ${{ github.ref_type != 'tag' }}
           includeUpdaterJson: true
           args: ${{ matrix.args }}
-
-      # Upload .sig files BEFORE rename so the rename step can find and rename them too
-      - name: Upload Windows updater signature
-        if: matrix.platform == 'windows-latest'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="${{ github.ref_type == 'tag' && github.ref_name || 'nightly' }}"
-          echo "Looking for .sig files..."
-          ls -la src-tauri/target/release/bundle/nsis/*.sig 2>/dev/null || echo "No .sig files found via ls"
-          for f in src-tauri/target/release/bundle/nsis/*x64-setup.exe.sig; do
-            if [ -f "$f" ]; then
-              echo "Uploading $f"
-              gh release upload "$TAG" "$f" --clobber
-            fi
-          done
-        shell: bash
-
-      - name: Upload macOS updater signature
-        if: matrix.platform == 'macos-latest'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="${{ github.ref_type == 'tag' && github.ref_name || 'nightly' }}"
-          echo "Looking for .sig files..."
-          ls -la src-tauri/target/universal-apple-darwin/release/bundle/macos/*.sig 2>/dev/null || echo "No .sig in macos dir"
-          for f in src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz.sig; do
-            if [ -f "$f" ]; then
-              echo "Uploading $f"
-              gh release upload "$TAG" "$f" --clobber
-            fi
-          done
 
       - name: Rename Windows portable exe
         if: matrix.platform == 'windows-latest'
