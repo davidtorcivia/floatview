@@ -59,6 +59,8 @@
             height: ${HOTZONE_HEIGHT}px;
             pointer-events: auto;
             z-index: 2147483646;
+            -webkit-app-region: drag;
+            cursor: grab;
         }
 
         .strip {
@@ -921,25 +923,32 @@
     const btnClose = strip.querySelector('#btn-close');
 
     function updateRecentDropdown() {
+        recentDropdown.replaceChildren();
+
         if (!config || !config.recent_urls || config.recent_urls.length === 0) {
-            recentDropdown.innerHTML = '<div class="recent-empty">No recent URLs</div>';
+            const empty = document.createElement('div');
+            empty.className = 'recent-empty';
+            empty.textContent = 'No recent URLs';
+            recentDropdown.appendChild(empty);
             return;
         }
 
         const currentUrl = window.location.href;
-        recentDropdown.innerHTML = config.recent_urls.map(url => {
-            const isCurrent = url === currentUrl;
-            return `<div class="recent-item${isCurrent ? ' current' : ''}" data-url="${url}">${url}</div>`;
-        }).join('');
-
-        recentDropdown.querySelectorAll('.recent-item').forEach(item => {
+        config.recent_urls.forEach((url) => {
+            const item = document.createElement('div');
+            item.className = 'recent-item';
+            if (url === currentUrl) {
+                item.classList.add('current');
+            }
+            item.dataset.url = url;
+            item.textContent = url;
             item.addEventListener('click', async () => {
-                const url = item.dataset.url;
                 if (url && !item.classList.contains('current')) {
                     await invoke('set_url', { url });
                     window.location.href = url;
                 }
             });
+            recentDropdown.appendChild(item);
         });
     }
 
@@ -984,27 +993,12 @@
         btnLock.innerHTML = isLocked ? icons.lockActive : icons.lock;
     }
 
-    // Drag bar events
-    dragBar.addEventListener('mousedown', (e) => {
-        if (window.__TAURI__?.window) {
-            const win = window.__TAURI__.window.getCurrentWindow();
-            win.startDragging();
-        }
-    });
-
     dragBar.addEventListener('dblclick', () => {
         invoke('maximize_toggle');
     });
 
     dragBar.addEventListener('mouseenter', () => {
         cancelHide();
-    });
-
-    // Allow dragging from the hotzone (much larger target than the drag bar)
-    hotzone.addEventListener('mousedown', (e) => {
-        if (window.__TAURI__?.window) {
-            window.__TAURI__.window.getCurrentWindow().startDragging();
-        }
     });
 
     hotzone.addEventListener('mouseenter', () => {
@@ -1044,14 +1038,6 @@
         if (dwellTimer) {
             clearTimeout(dwellTimer);
             dwellTimer = null;
-        }
-    });
-
-    // Allow dragging from non-interactive areas of the control strip
-    strip.addEventListener('mousedown', (e) => {
-        if (e.target.closest('.btn, .url-display, .opacity-slider, .recent-container, input, button')) return;
-        if (window.__TAURI__?.window) {
-            window.__TAURI__.window.getCurrentWindow().startDragging();
         }
     });
 
@@ -1127,6 +1113,11 @@
     });
 
     opacitySlider.addEventListener('input', async (e) => {
+        const opacity = parseInt(e.target.value, 10) / 100;
+        await invoke('set_opacity_live', { opacity });
+    });
+
+    opacitySlider.addEventListener('change', async (e) => {
         const opacity = parseInt(e.target.value, 10) / 100;
         await invoke('set_opacity', { opacity });
     });
@@ -1246,6 +1237,11 @@
     settingOpacity.addEventListener('input', async (e) => {
         const opacity = parseInt(e.target.value, 10) / 100;
         settingOpacityValue.textContent = e.target.value;
+        await invoke('set_opacity_live', { opacity });
+    });
+
+    settingOpacity.addEventListener('change', async (e) => {
+        const opacity = parseInt(e.target.value, 10) / 100;
         await invoke('set_opacity', { opacity });
     });
 
@@ -1465,10 +1461,6 @@
         if (!window.__TAURI__?.event?.listen) return false;
 
         const listen = window.__TAURI__.event.listen;
-
-        listen('save-state', async () => {
-            await invoke('save_window_geometry');
-        });
 
         listen('opacity-changed', (event) => {
             opacitySlider.value = Math.round(event.payload * 100);

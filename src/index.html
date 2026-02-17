@@ -150,11 +150,22 @@
             let url = urlInput.value.trim();
             if (!url) return;
 
-            if (!url.match(/^https?:\/\//)) {
-                url = 'http://' + url;
+            if (!url.match(/^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//)) {
+                url = 'https://' + url;
             }
 
-            if (window.__TAURI__) {
+            let parsed;
+            try {
+                parsed = new URL(url);
+            } catch {
+                return;
+            }
+            if (!/^https?:$/.test(parsed.protocol)) {
+                return;
+            }
+            url = parsed.toString();
+
+            if (window.__TAURI__?.core?.invoke) {
                 const { invoke } = window.__TAURI__.core;
                 await invoke('set_url', { url });
             }
