@@ -202,12 +202,6 @@ Configuration files are stored separately and not removed by default:
 
 This program will not transfer any information to other networked systems unless specifically requested by the user. The only automated network request is the optional **Check for Updates** feature in Settings, which queries the [GitHub Releases API](https://github.com/davidtorcivia/floatview/releases) to check for new versions. No personal data, telemetry, or usage statistics are collected or transmitted.
 
-## Code Signing
-
-Windows binaries are signed through the [SignPath Foundation](https://signpath.org) free code signing program for open-source software.
-
-Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
-
 ## License
 
 [MIT](LICENSE)
