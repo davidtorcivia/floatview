@@ -37,3 +37,9 @@ src-tauri/target/
 
 # Tauri generated schemas (regenerated on build)
 src-tauri/gen/
+
+# Signing keys (private keys must NEVER be committed)
+*.key
+*.key.pub
+*.pem
+*.p12

@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "FloatView",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "com.floatview.app",
   "build": {
     "frontendDist": "../src",
@@ -42,6 +42,12 @@
   "plugins": {
     "shell": {
       "open": true
+    },
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDgwQTE1NDRGQkM5QUIzRUIKUldUcnM1cThUMVNoZ0tYMzRpRVFCYVM4bGhiZVZHNGN6Nnp3UStqL1BQelNsRWpuNUpDdFp6ZEIK",
+      "endpoints": [
+        "https://github.com/davidtorcivia/floatview/releases/latest/download/latest.json"
+      ]
     }
   }
 }

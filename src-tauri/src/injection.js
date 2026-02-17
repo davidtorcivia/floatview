@@ -387,8 +387,8 @@
             padding-top: 16px;
             border-top: 1px solid rgba(255,255,255,0.1);
             display: flex;
-            justify-content: flex-end;
-            gap: 10px;
+            justify-content: space-between;
+            align-items: center;
         }
 
         .context-menu {
@@ -475,6 +475,204 @@
             font-family: 'SF Mono', Monaco, monospace;
             font-size: 11px;
             margin: 0 2px;
+        }
+
+        .settings-version {
+            font-size: 12px;
+            color: rgba(255,255,255,0.3);
+        }
+
+        .update-section {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .update-status {
+            font-size: 13px;
+            color: rgba(255,255,255,0.5);
+        }
+
+        .update-status.available {
+            color: rgba(66, 133, 244, 0.9);
+        }
+
+        .update-status.error {
+            color: rgba(244, 67, 54, 0.8);
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .update-spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255,255,255,0.2);
+            border-top-color: rgba(255,255,255,0.6);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            vertical-align: middle;
+            margin-right: 6px;
+        }
+
+        .tutorial-modal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(28, 28, 28, 0.98);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 12px;
+            padding: 32px;
+            width: 480px;
+            max-width: 90vw;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 12px 48px rgba(0,0,0,0.6);
+            z-index: 2147483647;
+            pointer-events: auto;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            color: #fff;
+        }
+
+        .tutorial-modal.hidden {
+            display: none;
+        }
+
+        .tutorial-step {
+            display: none;
+        }
+
+        .tutorial-step.active {
+            display: block;
+        }
+
+        .tutorial-step h2 {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+
+        .tutorial-step p {
+            font-size: 14px;
+            line-height: 1.6;
+            color: rgba(255,255,255,0.8);
+            margin-bottom: 12px;
+        }
+
+        .tutorial-diagram {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 12px;
+            color: rgba(255,255,255,0.7);
+            text-align: center;
+            line-height: 1.8;
+            overflow-x: auto;
+        }
+
+        .tutorial-shortcut-table {
+            width: 100%;
+            margin: 12px 0;
+            border-collapse: collapse;
+        }
+
+        .tutorial-shortcut-table td {
+            padding: 8px 12px;
+            font-size: 13px;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+        }
+
+        .tutorial-shortcut-table td:first-child {
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 12px;
+            color: rgba(255,255,255,0.6);
+            white-space: nowrap;
+            width: 45%;
+        }
+
+        .tutorial-shortcut-table td:last-child {
+            color: rgba(255,255,255,0.8);
+        }
+
+        .tutorial-nav {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 24px;
+            padding-top: 16px;
+            border-top: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .tutorial-nav-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .tutorial-btn {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15);
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+            cursor: pointer;
+            transition: background 0.1s;
+            min-height: 40px;
+        }
+
+        .tutorial-btn:hover {
+            background: rgba(255,255,255,0.15);
+        }
+
+        .tutorial-btn.primary {
+            background: rgba(66, 133, 244, 0.6);
+            border-color: rgba(66, 133, 244, 0.8);
+        }
+
+        .tutorial-btn.primary:hover {
+            background: rgba(66, 133, 244, 0.8);
+        }
+
+        .tutorial-skip {
+            background: none;
+            border: none;
+            color: rgba(255,255,255,0.4);
+            font-size: 13px;
+            font-family: inherit;
+            cursor: pointer;
+            padding: 8px 4px;
+            transition: color 0.1s;
+        }
+
+        .tutorial-skip:hover {
+            color: rgba(255,255,255,0.7);
+        }
+
+        .tutorial-dots {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+
+        .tutorial-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.2);
+            transition: background 0.2s;
+        }
+
+        .tutorial-dot.active {
+            background: rgba(66, 133, 244, 0.8);
         }
     `;
     shadow.appendChild(style);
@@ -585,11 +783,109 @@
             Tip: Use <kbd>Ctrl+L</kbd> to show the control bar and focus the URL input.
         </div>
 
+        <div class="settings-section">
+            <div class="settings-section-title">Updates</div>
+            <div class="settings-row">
+                <div class="update-section">
+                    <button class="settings-btn" id="btn-check-updates">Check for Updates</button>
+                    <span class="update-status" id="update-status"></span>
+                </div>
+            </div>
+        </div>
+
         <div class="settings-footer">
+            <span class="settings-version" id="settings-version"></span>
             <button class="settings-btn" id="btn-close-settings">Close</button>
         </div>
     `;
     shadow.appendChild(settingsModal);
+
+    const tutorialModal = document.createElement('div');
+    tutorialModal.className = 'tutorial-modal hidden';
+    tutorialModal.innerHTML = `
+        <div class="tutorial-step active" data-step="0">
+            <h2>Welcome to FloatView!</h2>
+            <p>A floating browser that stays on top of everything. Perfect for picture-in-picture video, dashboards, chat windows, or anything you want to keep visible.</p>
+            <p>Let's take a quick tour of the key features.</p>
+            <div class="tutorial-nav">
+                <button class="tutorial-skip" id="tutorial-skip">Skip tutorial</button>
+                <div class="tutorial-nav-buttons">
+                    <button class="tutorial-btn primary" id="tutorial-next">Next</button>
+                </div>
+            </div>
+            <div class="tutorial-dots">
+                <div class="tutorial-dot active"></div>
+                <div class="tutorial-dot"></div>
+                <div class="tutorial-dot"></div>
+                <div class="tutorial-dot"></div>
+            </div>
+        </div>
+        <div class="tutorial-step" data-step="1">
+            <h2>The Control Strip</h2>
+            <p>Hover the <strong>top edge</strong> of the window to reveal the control strip. It slides down with all your controls:</p>
+            <div class="tutorial-diagram">[Pin] [Recent] [Home] [____URL bar____] [Lock] | [Opacity] [Settings] [-] [x]</div>
+            <p><strong>Pin</strong> toggles always-on-top &bull; <strong>Home</strong> goes to your home page &bull; <strong>Lock</strong> enables click-through mode &bull; <strong>Opacity</strong> adjusts transparency</p>
+            <p>You can also press <strong>Ctrl+L</strong> to reveal the strip and focus the URL bar.</p>
+            <div class="tutorial-nav">
+                <button class="tutorial-skip" id="tutorial-skip">Skip tutorial</button>
+                <div class="tutorial-nav-buttons">
+                    <button class="tutorial-btn" id="tutorial-back">Back</button>
+                    <button class="tutorial-btn primary" id="tutorial-next">Next</button>
+                </div>
+            </div>
+            <div class="tutorial-dots">
+                <div class="tutorial-dot"></div>
+                <div class="tutorial-dot active"></div>
+                <div class="tutorial-dot"></div>
+                <div class="tutorial-dot"></div>
+            </div>
+        </div>
+        <div class="tutorial-step" data-step="2">
+            <h2>Shortcuts &amp; Tray</h2>
+            <p>Global hotkeys work even when FloatView isn't focused:</p>
+            <table class="tutorial-shortcut-table">
+                <tr><td>Alt+Shift+T</td><td>Toggle always-on-top</td></tr>
+                <tr><td>Alt+Shift+D</td><td>Toggle click-through mode</td></tr>
+                <tr><td>Alt+Shift+Up/Down</td><td>Adjust opacity</td></tr>
+                <tr><td>Alt+Shift+H</td><td>Show/hide window</td></tr>
+                <tr><td>Ctrl+L</td><td>Show strip &amp; focus URL bar</td></tr>
+            </table>
+            <p>FloatView lives in your <strong>system tray</strong> &mdash; right-click the tray icon for quick controls, or left-click to show/hide the window.</p>
+            <div class="tutorial-nav">
+                <button class="tutorial-skip" id="tutorial-skip">Skip tutorial</button>
+                <div class="tutorial-nav-buttons">
+                    <button class="tutorial-btn" id="tutorial-back">Back</button>
+                    <button class="tutorial-btn primary" id="tutorial-next">Next</button>
+                </div>
+            </div>
+            <div class="tutorial-dots">
+                <div class="tutorial-dot"></div>
+                <div class="tutorial-dot"></div>
+                <div class="tutorial-dot active"></div>
+                <div class="tutorial-dot"></div>
+            </div>
+        </div>
+        <div class="tutorial-step" data-step="3">
+            <h2>Get Started</h2>
+            <p>Set your home page in <strong>Settings</strong> (gear icon in the control strip), or just start browsing by typing a URL.</p>
+            <p>Drag the window by grabbing the thin bar at the very top edge. Resize by dragging any edge or corner.</p>
+            <p>You can always reopen Settings from the control strip or by right-clicking the tray icon.</p>
+            <div class="tutorial-nav">
+                <span></span>
+                <div class="tutorial-nav-buttons">
+                    <button class="tutorial-btn" id="tutorial-back">Back</button>
+                    <button class="tutorial-btn primary" id="tutorial-finish">Get Started</button>
+                </div>
+            </div>
+            <div class="tutorial-dots">
+                <div class="tutorial-dot"></div>
+                <div class="tutorial-dot"></div>
+                <div class="tutorial-dot"></div>
+                <div class="tutorial-dot active"></div>
+            </div>
+        </div>
+    `;
+    shadow.appendChild(tutorialModal);
 
     const contextMenu = document.createElement('div');
     contextMenu.className = 'context-menu';
@@ -655,7 +951,8 @@
         if (hideTimer) clearTimeout(hideTimer);
         hideTimer = setTimeout(() => {
             hideTimer = null;
-            if (!settingsModal.classList.contains('hidden') ||
+            if (tutorialActive ||
+                !settingsModal.classList.contains('hidden') ||
                 recentDropdown.classList.contains('visible')) {
                 return;
             }
@@ -839,6 +1136,55 @@
     const hotkeyOntop = settingsModal.querySelector('#hotkey-ontop');
     const hotkeyLocked = settingsModal.querySelector('#hotkey-locked');
     const hotkeyVisibility = settingsModal.querySelector('#hotkey-visibility');
+    const btnCheckUpdates = settingsModal.querySelector('#btn-check-updates');
+    const updateStatus = settingsModal.querySelector('#update-status');
+    const settingsVersion = settingsModal.querySelector('#settings-version');
+
+    let updateMode = 'check'; // 'check' or 'install'
+
+    // Load version into settings footer
+    (async () => {
+        const version = await invoke('get_version');
+        if (version) settingsVersion.textContent = 'FloatView v' + version;
+    })();
+
+    btnCheckUpdates.addEventListener('click', async () => {
+        if (updateMode === 'install') {
+            btnCheckUpdates.disabled = true;
+            updateStatus.className = 'update-status';
+            updateStatus.innerHTML = '<span class="update-spinner"></span>Downloading...';
+            try {
+                await invoke('install_update');
+            } catch (e) {
+                updateStatus.className = 'update-status error';
+                updateStatus.textContent = 'Install failed: ' + e;
+                btnCheckUpdates.disabled = false;
+            }
+            return;
+        }
+
+        btnCheckUpdates.disabled = true;
+        updateStatus.className = 'update-status';
+        updateStatus.innerHTML = '<span class="update-spinner"></span>Checking...';
+        try {
+            const result = await invoke('check_for_updates');
+            if (result) {
+                updateStatus.className = 'update-status available';
+                updateStatus.textContent = 'v' + result.version + ' available';
+                btnCheckUpdates.textContent = 'Install Update';
+                updateMode = 'install';
+                btnCheckUpdates.disabled = false;
+            } else {
+                updateStatus.className = 'update-status';
+                updateStatus.textContent = 'You\'re up to date!';
+                btnCheckUpdates.disabled = false;
+            }
+        } catch (e) {
+            updateStatus.className = 'update-status error';
+            updateStatus.textContent = 'Check failed';
+            btnCheckUpdates.disabled = false;
+        }
+    });
 
     function openSettings() {
         if (config) {
@@ -903,7 +1249,13 @@
     });
 
     btnCloseSettings.addEventListener('click', closeSettings);
-    modalOverlay.addEventListener('click', closeSettings);
+    modalOverlay.addEventListener('click', () => {
+        if (tutorialActive) {
+            dismissTutorial();
+        } else {
+            closeSettings();
+        }
+    });
 
     const ctxSettings = contextMenu.querySelector('#ctx-settings');
     const ctxOntop = contextMenu.querySelector('#ctx-ontop');
@@ -985,13 +1337,57 @@
             urlInput.select();
         }
         if (e.key === 'Escape') {
-            if (stripVisible) {
+            if (tutorialActive) {
+                dismissTutorial();
+            } else if (!settingsModal.classList.contains('hidden')) {
+                closeSettings();
+            } else if (stripVisible) {
                 hideStrip();
                 urlInput.blur();
             }
-            closeSettings();
         }
     });
+
+    let tutorialActive = false;
+
+    async function dismissTutorial() {
+        if (!tutorialActive) return;
+        tutorialActive = false;
+        tutorialModal.classList.add('hidden');
+        modalOverlay.classList.remove('visible');
+        if (config) {
+            config.first_run = false;
+            await invoke('update_config', { config });
+        }
+    }
+
+    function showTutorial() {
+        let currentStep = 0;
+        const steps = tutorialModal.querySelectorAll('.tutorial-step');
+        const totalSteps = steps.length;
+
+        function goToStep(n) {
+            steps.forEach(s => s.classList.remove('active'));
+            steps[n].classList.add('active');
+            currentStep = n;
+        }
+
+        tutorialModal.addEventListener('click', (e) => {
+            const target = e.target;
+            if (target.id === 'tutorial-next') {
+                if (currentStep < totalSteps - 1) goToStep(currentStep + 1);
+            } else if (target.id === 'tutorial-back') {
+                if (currentStep > 0) goToStep(currentStep - 1);
+            } else if (target.id === 'tutorial-skip' || target.id === 'tutorial-finish') {
+                dismissTutorial();
+            }
+        });
+
+        tutorialActive = true;
+        tutorialModal.classList.remove('hidden');
+        modalOverlay.classList.add('visible');
+        goToStep(0);
+    }
 
     async function initConfig() {
         try {
@@ -1003,6 +1399,10 @@
                 btnLock.classList.toggle('active', config.window.locked);
                 opacitySlider.value = Math.round(config.window.opacity * 100);
                 updateRecentDropdown();
+
+                if (config.first_run) {
+                    showTutorial();
+                }
             }
         } catch (e) {
             console.warn('Failed to load config:', e);

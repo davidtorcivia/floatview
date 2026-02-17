@@ -58,10 +58,16 @@ pub struct AppConfig {
     pub hotkeys: HotkeyConfig,
     #[serde(default = "default_home_url")]
     pub home_url: String,
+    #[serde(default = "default_true")]
+    pub first_run: bool,
 }
 
 fn default_home_url() -> String {
     "https://www.google.com".to_string()
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for AppConfig {
@@ -74,6 +80,7 @@ impl Default for AppConfig {
             launch_at_startup: false,
             hotkeys: HotkeyConfig::default(),
             home_url: default_home_url(),
+            first_run: true,
         }
     }
 }

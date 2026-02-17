@@ -2,6 +2,7 @@ name: Build & Release
 
 on:
   push:
+    branches: [main]
     tags:
       - 'v*'
   workflow_dispatch:
@@ -48,15 +49,17 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'FloatView ${{ github.ref_name }}'
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'nightly' }}
+          releaseName: ${{ github.ref_type == 'tag' && format('FloatView {0}', github.ref_name) || 'FloatView Nightly' }}
           releaseBody: |
-            Download the installer for your platform below.
+            ${{ github.ref_type == 'tag' && 'Download the installer for your platform below.' || 'Rolling nightly build from the latest commit on main. This pre-release is overwritten on every push.' }}
 
             **Windows:** `.msi` installer or portable `.exe`. Requires Windows 10 or 11. WebView2 Runtime is installed automatically if missing.
 
             **macOS:** `.dmg` universal binary (Apple Silicon + Intel).
           releaseDraft: false
-          prerelease: false
+          prerelease: ${{ github.ref_type != 'tag' }}
           args: ${{ matrix.args }}
