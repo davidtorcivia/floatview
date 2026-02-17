@@ -79,20 +79,20 @@ jobs:
             gh release download "$TAG" --pattern "$OLD_NAME" --dir /tmp
             mv "/tmp/$OLD_NAME" "/tmp/$NEW_NAME"
             gh release delete-asset "$TAG" "$OLD_NAME" --yes
-            gh release upload "$TAG" "/tmp/$NEW_NAME"
+            gh release upload "$TAG" "/tmp/$NEW_NAME" --clobber
             # Rename the .sig file if it exists
             OLD_SIG="${OLD_NAME}.sig"
             NEW_SIG="${NEW_NAME}.sig"
             if gh release download "$TAG" --pattern "$OLD_SIG" --dir /tmp 2>/dev/null; then
               mv "/tmp/$OLD_SIG" "/tmp/$NEW_SIG"
               gh release delete-asset "$TAG" "$OLD_SIG" --yes
-              gh release upload "$TAG" "/tmp/$NEW_SIG"
+              gh release upload "$TAG" "/tmp/$NEW_SIG" --clobber
             fi
             # Update latest.json URLs to use the new filename
             if gh release download "$TAG" --pattern "latest.json" --dir /tmp 2>/dev/null; then
               sed -i "s/x64-setup\.exe/x64-portable.exe/g" /tmp/latest.json
               gh release delete-asset "$TAG" "latest.json" --yes
-              gh release upload "$TAG" "/tmp/latest.json"
+              gh release upload "$TAG" "/tmp/latest.json" --clobber
             fi
           fi
         shell: bash
