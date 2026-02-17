@@ -73,10 +73,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ github.ref_type == 'tag' && github.ref_name || 'nightly' }}"
-          SIG_FILE=$(find src-tauri/target/release/bundle/nsis -name "*x64-setup.exe.sig" 2>/dev/null | head -1)
-          if [ -n "$SIG_FILE" ]; then
-            gh release upload "$TAG" "$SIG_FILE" --clobber
-          fi
+          echo "Looking for .sig files..."
+          ls -la src-tauri/target/release/bundle/nsis/*.sig 2>/dev/null || echo "No .sig files found via ls"
+          for f in src-tauri/target/release/bundle/nsis/*x64-setup.exe.sig; do
+            if [ -f "$f" ]; then
+              echo "Uploading $f"
+              gh release upload "$TAG" "$f" --clobber
+            fi
+          done
         shell: bash
 
       - name: Upload macOS updater signature
@@ -85,10 +89,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ github.ref_type == 'tag' && github.ref_name || 'nightly' }}"
-          SIG_FILE=$(find src-tauri/target -name "*.app.tar.gz.sig" 2>/dev/null | head -1)
-          if [ -n "$SIG_FILE" ]; then
-            gh release upload "$TAG" "$SIG_FILE" --clobber
-          fi
+          echo "Looking for .sig files..."
+          ls -la src-tauri/target/universal-apple-darwin/release/bundle/macos/*.sig 2>/dev/null || echo "No .sig in macos dir"
+          for f in src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz.sig; do
+            if [ -f "$f" ]; then
+              echo "Uploading $f"
+              gh release upload "$TAG" "$f" --clobber
+            fi
+          done
 
       - name: Rename Windows portable exe
         if: matrix.platform == 'windows-latest'
