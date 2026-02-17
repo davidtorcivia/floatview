@@ -26,6 +26,7 @@ pub fn set_window_opacity<R: Runtime>(window: &WebviewWindow<R>, opacity: f64) {
 }
 
 #[cfg(target_os = "macos")]
+#[allow(deprecated, unexpected_cfgs)]
 pub fn set_window_opacity<R: Runtime>(window: &WebviewWindow<R>, opacity: f64) {
     use objc::{msg_send, sel, sel_impl};
     let _ = window.with_webview(move |wv| unsafe {

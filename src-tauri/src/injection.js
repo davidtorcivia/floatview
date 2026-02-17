@@ -1181,7 +1181,7 @@
             }
         } catch (e) {
             updateStatus.className = 'update-status error';
-            updateStatus.textContent = 'Check failed';
+            updateStatus.textContent = 'Check failed: ' + e;
             btnCheckUpdates.disabled = false;
         }
     });
