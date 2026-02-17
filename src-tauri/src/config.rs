@@ -17,8 +17,8 @@ impl Default for WindowConfig {
         Self {
             x: 100,
             y: 100,
-            width: 800,
-            height: 450,
+            width: 1280,
+            height: 720,
             monitor: 0,
             always_on_top: true,
             opacity: 1.0,

@@ -615,7 +615,7 @@ fn run() {
                 WebviewUrl::App("index.html".into()),
             )
             .title("FloatView")
-            .inner_size(800.0, 450.0)
+            .inner_size(1280.0, 720.0)
             .decorations(false)
             .always_on_top(true)
             .initialization_script(INJECTION_SCRIPT)

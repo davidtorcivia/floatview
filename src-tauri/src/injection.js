@@ -9,6 +9,15 @@
     const STRIP_HEIGHT = 48;
     const DWELL_DELAY = 100;
     const HIDE_DELAY = 300;
+    const IS_MAC = navigator.platform.includes('Mac');
+
+    function formatKey(shortcut) {
+        if (!IS_MAC) return shortcut;
+        return shortcut
+            .replace(/Ctrl\+/g, '⌘')
+            .replace(/Alt\+/g, '⌥')
+            .replace(/Shift\+/g, '⇧');
+    }
 
     let stripVisible = false;
     let dwellTimer = null;
@@ -702,14 +711,14 @@
     const strip = document.createElement('div');
     strip.className = 'strip';
     strip.innerHTML = `
-        <button class="btn" id="btn-pin" title="Always on Top (Alt+Shift+T)">${icons.pin}</button>
+        <button class="btn" id="btn-pin" title="Always on Top (${formatKey('Alt+Shift+T')})">${icons.pin}</button>
         <div class="recent-container">
             <button class="btn" id="btn-recent" title="Recent URLs">${icons.recent}</button>
             <div class="recent-dropdown" id="recent-dropdown"></div>
         </div>
         <button class="btn" id="btn-home" title="Go Home">${icons.home}</button>
         <input type="text" class="url-display" id="url-input" placeholder="Enter URL to load...">
-        <button class="btn" id="btn-lock" title="Click-through mode (Alt+Shift+D)">${icons.lock}</button>
+        <button class="btn" id="btn-lock" title="Click-through mode (${formatKey('Alt+Shift+D')})">${icons.lock}</button>
         <div class="divider"></div>
         <input type="range" class="opacity-slider" id="opacity-slider" min="10" max="100" value="100" title="Opacity">
         <button class="btn" id="btn-settings" title="Settings">${icons.settings}</button>
@@ -747,19 +756,19 @@
             <div class="settings-section-title">Keyboard Shortcuts</div>
             <div class="settings-row">
                 <span class="settings-label">Toggle Always on Top</span>
-                <span class="settings-value" id="hotkey-ontop">Alt+Shift+T</span>
+                <span class="settings-value" id="hotkey-ontop">${formatKey('Alt+Shift+T')}</span>
             </div>
             <div class="settings-row">
                 <span class="settings-label">Toggle Click-Through</span>
-                <span class="settings-value" id="hotkey-locked">Alt+Shift+D</span>
+                <span class="settings-value" id="hotkey-locked">${formatKey('Alt+Shift+D')}</span>
             </div>
             <div class="settings-row">
                 <span class="settings-label">Opacity Up/Down</span>
-                <span class="settings-value">Alt+Shift+Up/Down</span>
+                <span class="settings-value">${formatKey('Alt+Shift+Up/Down')}</span>
             </div>
             <div class="settings-row">
                 <span class="settings-label">Show/Hide Window</span>
-                <span class="settings-value" id="hotkey-visibility">Alt+Shift+H</span>
+                <span class="settings-value" id="hotkey-visibility">${formatKey('Alt+Shift+H')}</span>
             </div>
         </div>
 
@@ -844,11 +853,11 @@
             <h2>Shortcuts &amp; Tray</h2>
             <p>Global hotkeys work even when FloatView isn't focused:</p>
             <table class="tutorial-shortcut-table">
-                <tr><td>Alt+Shift+T</td><td>Toggle always-on-top</td></tr>
-                <tr><td>Alt+Shift+D</td><td>Toggle click-through mode</td></tr>
-                <tr><td>Alt+Shift+Up/Down</td><td>Adjust opacity</td></tr>
-                <tr><td>Alt+Shift+H</td><td>Show/hide window</td></tr>
-                <tr><td>Ctrl+L</td><td>Show strip &amp; focus URL bar</td></tr>
+                <tr><td>${formatKey('Alt+Shift+T')}</td><td>Toggle always-on-top</td></tr>
+                <tr><td>${formatKey('Alt+Shift+D')}</td><td>Toggle click-through mode</td></tr>
+                <tr><td>${formatKey('Alt+Shift+Up/Down')}</td><td>Adjust opacity</td></tr>
+                <tr><td>${formatKey('Alt+Shift+H')}</td><td>Show/hide window</td></tr>
+                <tr><td>${formatKey('Ctrl+L')}</td><td>Show strip &amp; focus URL bar</td></tr>
             </table>
             <p>FloatView lives in your <strong>system tray</strong> &mdash; right-click the tray icon for quick controls, or left-click to show/hide the window.</p>
             <div class="tutorial-nav">
@@ -1193,9 +1202,9 @@
             settingOpacity.value = Math.round(config.window.opacity * 100);
             settingOpacityValue.textContent = Math.round(config.window.opacity * 100);
             if (config.hotkeys) {
-                hotkeyOntop.textContent = config.hotkeys.toggle_on_top || 'Alt+Shift+T';
-                hotkeyLocked.textContent = config.hotkeys.toggle_locked || 'Alt+Shift+D';
-                hotkeyVisibility.textContent = config.hotkeys.toggle_visibility || 'Alt+Shift+H';
+                hotkeyOntop.textContent = formatKey(config.hotkeys.toggle_on_top || 'Alt+Shift+T');
+                hotkeyLocked.textContent = formatKey(config.hotkeys.toggle_locked || 'Alt+Shift+D');
+                hotkeyVisibility.textContent = formatKey(config.hotkeys.toggle_visibility || 'Alt+Shift+H');
             }
             settingHomeUrl.value = config.home_url || 'https://www.google.com';
         }
