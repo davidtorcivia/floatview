@@ -27,11 +27,12 @@ pub fn set_window_opacity<R: Runtime>(window: &WebviewWindow<R>, opacity: f64) {
 
 #[cfg(target_os = "macos")]
 pub fn set_window_opacity<R: Runtime>(window: &WebviewWindow<R>, opacity: f64) {
+    use objc::{msg_send, sel, sel_impl};
     let _ = window.with_webview(move |wv| unsafe {
         let webview: cocoa::base::id = wv.inner() as cocoa::base::id;
-        let ns_window: cocoa::base::id = objc::msg_send![webview, window];
+        let ns_window: cocoa::base::id = msg_send![webview, window];
         if ns_window != cocoa::base::nil {
-            let _: () = objc::msg_send![ns_window, setAlphaValue: opacity];
+            let _: () = msg_send![ns_window, setAlphaValue: opacity];
         }
     });
 }

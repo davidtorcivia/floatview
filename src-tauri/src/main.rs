@@ -617,7 +617,6 @@ fn run() {
             .title("FloatView")
             .inner_size(800.0, 450.0)
             .decorations(false)
-            .transparent(true)
             .always_on_top(true)
             .initialization_script(INJECTION_SCRIPT)
             .user_agent(USER_AGENT)
