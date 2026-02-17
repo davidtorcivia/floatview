@@ -10,6 +10,7 @@
     const DWELL_DELAY = 100;
     const HIDE_DELAY = 300;
     const IS_MAC = navigator.platform.includes('Mac');
+    const COMMAND_TOKEN = '__FLOATVIEW_COMMAND_TOKEN__';
 
     function formatKey(shortcut) {
         if (!IS_MAC) return shortcut;
@@ -766,11 +767,23 @@
             </div>
             <div class="settings-row">
                 <span class="settings-label">Opacity Up/Down</span>
-                <span class="settings-value">${formatKey('Alt+Shift+Up/Down')}</span>
+                <span class="settings-value" id="hotkey-opacity">${formatKey('Alt+Shift+Up/Down')}</span>
             </div>
             <div class="settings-row">
                 <span class="settings-label">Show/Hide Window</span>
                 <span class="settings-value" id="hotkey-visibility">${formatKey('Alt+Shift+H')}</span>
+            </div>
+            <div class="settings-row">
+                <span class="settings-label">Play/Pause Media</span>
+                <span class="settings-value" id="hotkey-playpause">${formatKey('Alt+Shift+P')}</span>
+            </div>
+            <div class="settings-row">
+                <span class="settings-label">Skip Forward</span>
+                <span class="settings-value" id="hotkey-next">${formatKey('Alt+Shift+Right')}</span>
+            </div>
+            <div class="settings-row">
+                <span class="settings-label">Skip Back</span>
+                <span class="settings-value" id="hotkey-previous">${formatKey('Alt+Shift+Left')}</span>
             </div>
         </div>
 
@@ -859,6 +872,9 @@
                 <tr><td>${formatKey('Alt+Shift+D')}</td><td>Toggle click-through mode</td></tr>
                 <tr><td>${formatKey('Alt+Shift+Up/Down')}</td><td>Adjust opacity</td></tr>
                 <tr><td>${formatKey('Alt+Shift+H')}</td><td>Show/hide window</td></tr>
+                <tr><td>${formatKey('Alt+Shift+P')}</td><td>Play/pause media</td></tr>
+                <tr><td>${formatKey('Alt+Shift+Right')}</td><td>Skip forward</td></tr>
+                <tr><td>${formatKey('Alt+Shift+Left')}</td><td>Skip back</td></tr>
                 <tr><td>${formatKey('Ctrl+L')}</td><td>Show strip &amp; focus URL bar</td></tr>
             </table>
             <p>FloatView lives in your <strong>system tray</strong> &mdash; right-click the tray icon for quick controls, or left-click to show/hide the window.</p>
@@ -1060,6 +1076,8 @@
         e.stopPropagation();
     });
 
+    let tauriInvoke = null;
+
     async function invoke(cmd, args = {}) {
         if (!window.__TAURI__?.core) {
             // Wait for __TAURI__ to become available (race condition on external pages)
@@ -1068,8 +1086,11 @@
                 if (window.__TAURI__?.core) break;
             }
         }
-        if (window.__TAURI__?.core) {
-            return window.__TAURI__.core.invoke(cmd, args);
+        if (!tauriInvoke && window.__TAURI__?.core?.invoke) {
+            tauriInvoke = window.__TAURI__.core.invoke.bind(window.__TAURI__.core);
+        }
+        if (tauriInvoke) {
+            return tauriInvoke(cmd, { ...args, token: COMMAND_TOKEN });
         }
         console.warn('FloatView: Tauri IPC not available for:', cmd);
         return null;
@@ -1135,12 +1156,14 @@
     const btnCloseSettings = settingsModal.querySelector('#btn-close-settings');
     const hotkeyOntop = settingsModal.querySelector('#hotkey-ontop');
     const hotkeyLocked = settingsModal.querySelector('#hotkey-locked');
+    const hotkeyOpacity = settingsModal.querySelector('#hotkey-opacity');
     const hotkeyVisibility = settingsModal.querySelector('#hotkey-visibility');
+    const hotkeyPlayPause = settingsModal.querySelector('#hotkey-playpause');
+    const hotkeyNext = settingsModal.querySelector('#hotkey-next');
+    const hotkeyPrevious = settingsModal.querySelector('#hotkey-previous');
     const btnCheckUpdates = settingsModal.querySelector('#btn-check-updates');
     const updateStatus = settingsModal.querySelector('#update-status');
     const settingsVersion = settingsModal.querySelector('#settings-version');
-
-    let updateMode = 'check'; // 'check' or 'install'
 
     // Load version into settings footer
     (async () => {
@@ -1149,20 +1172,6 @@
     })();
 
     btnCheckUpdates.addEventListener('click', async () => {
-        if (updateMode === 'install') {
-            btnCheckUpdates.disabled = true;
-            updateStatus.className = 'update-status';
-            updateStatus.innerHTML = '<span class="update-spinner"></span>Downloading...';
-            try {
-                await invoke('install_update');
-            } catch (e) {
-                updateStatus.className = 'update-status error';
-                updateStatus.textContent = 'Install failed: ' + e;
-                btnCheckUpdates.disabled = false;
-            }
-            return;
-        }
-
         btnCheckUpdates.disabled = true;
         updateStatus.className = 'update-status';
         updateStatus.innerHTML = '<span class="update-spinner"></span>Checking...';
@@ -1170,18 +1179,15 @@
             const result = await invoke('check_for_updates');
             if (result) {
                 updateStatus.className = 'update-status available';
-                updateStatus.textContent = 'v' + result.version + ' available';
-                btnCheckUpdates.textContent = 'Install Update';
-                updateMode = 'install';
-                btnCheckUpdates.disabled = false;
+                updateStatus.textContent = 'v' + result.version + ' available. Install from tray menu.';
             } else {
                 updateStatus.className = 'update-status';
                 updateStatus.textContent = 'You\'re up to date!';
-                btnCheckUpdates.disabled = false;
             }
         } catch (e) {
             updateStatus.className = 'update-status error';
             updateStatus.textContent = 'Check failed: ' + e;
+        } finally {
             btnCheckUpdates.disabled = false;
         }
     });
@@ -1195,7 +1201,15 @@
             if (config.hotkeys) {
                 hotkeyOntop.textContent = formatKey(config.hotkeys.toggle_on_top || 'Alt+Shift+T');
                 hotkeyLocked.textContent = formatKey(config.hotkeys.toggle_locked || 'Alt+Shift+D');
+                hotkeyOpacity.textContent = formatKey(
+                    (config.hotkeys.opacity_up || 'Alt+Shift+Up') +
+                    '/' +
+                    (config.hotkeys.opacity_down || 'Alt+Shift+Down')
+                );
                 hotkeyVisibility.textContent = formatKey(config.hotkeys.toggle_visibility || 'Alt+Shift+H');
+                hotkeyPlayPause.textContent = formatKey(config.hotkeys.media_play_pause || 'Alt+Shift+P');
+                hotkeyNext.textContent = formatKey(config.hotkeys.media_next || 'Alt+Shift+Right');
+                hotkeyPrevious.textContent = formatKey(config.hotkeys.media_previous || 'Alt+Shift+Left');
             }
             settingHomeUrl.value = config.home_url || 'https://www.google.com';
         }
@@ -1496,6 +1510,14 @@
             container.style.display = '';
             showStrip();
             openSettings();
+        });
+
+        listen('update-install-status', (event) => {
+            const message = String(event.payload || '');
+            updateStatus.className = message.toLowerCase().includes('failed')
+                ? 'update-status error'
+                : 'update-status';
+            updateStatus.textContent = message;
         });
 
         _tauriListenersReady = true;

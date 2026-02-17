@@ -15,6 +15,7 @@ use tracing::{error, info, warn};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use url::Url;
+use uuid::Uuid;
 
 mod config;
 mod opacity;
@@ -22,11 +23,44 @@ mod opacity;
 use config::AppConfig;
 
 const INJECTION_SCRIPT: &str = include_str!("injection.js");
+const COMMAND_TOKEN_PLACEHOLDER: &str = "__FLOATVIEW_COMMAND_TOKEN__";
 const DEFAULT_HOME_URL: &str = "https://www.google.com";
 const MAX_URL_LEN: usize = 2048;
 const MAX_HOTKEY_LEN: usize = 64;
 const MIN_WINDOW_SIZE: i32 = 200;
 const MAX_WINDOW_SIZE: i32 = 10_000;
+
+const MEDIA_PLAY_PAUSE_SCRIPT: &str = r#"
+(() => {
+  const media = document.querySelector('video, audio');
+  if (!media) return;
+  if (media.paused) {
+    media.play().catch(() => {});
+  } else {
+    media.pause();
+  }
+})();
+"#;
+
+const MEDIA_NEXT_SCRIPT: &str = r#"
+(() => {
+  const media = document.querySelector('video, audio');
+  if (!media) return;
+  if (media.duration && Number.isFinite(media.duration)) {
+    media.currentTime = Math.min(media.duration, media.currentTime + 30);
+  } else {
+    media.currentTime = media.currentTime + 30;
+  }
+})();
+"#;
+
+const MEDIA_PREVIOUS_SCRIPT: &str = r#"
+(() => {
+  const media = document.querySelector('video, audio');
+  if (!media) return;
+  media.currentTime = Math.max(0, media.currentTime - 15);
+})();
+"#;
 
 #[cfg(target_os = "windows")]
 const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0";
@@ -40,6 +74,7 @@ const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KH
 pub struct AppState {
     config: Mutex<AppConfig>,
     config_path: PathBuf,
+    command_token: String,
 }
 
 pub struct LoggingState {
@@ -106,6 +141,26 @@ fn get_config_path(app: &AppHandle) -> PathBuf {
         eprintln!("Failed to create config directory: {}", e);
     }
     app_dir.join("config.json")
+}
+
+fn build_injection_script(command_token: &str) -> String {
+    INJECTION_SCRIPT.replace(COMMAND_TOKEN_PLACEHOLDER, command_token)
+}
+
+fn authorize_command(
+    state: &tauri::State<'_, AppState>,
+    token: &str,
+    command_name: &str,
+) -> Result<(), String> {
+    if state.command_token == token {
+        Ok(())
+    } else {
+        warn!(
+            command = command_name,
+            "Rejected command due to invalid token"
+        );
+        Err("Unauthorized command".to_string())
+    }
 }
 
 fn normalize_url(raw: &str) -> Result<String, String> {
@@ -178,6 +233,11 @@ fn sanitize_config(mut config: AppConfig) -> AppConfig {
     config.hotkeys.opacity_down = sanitize_hotkey(&config.hotkeys.opacity_down, "Alt+Shift+Down");
     config.hotkeys.toggle_visibility =
         sanitize_hotkey(&config.hotkeys.toggle_visibility, "Alt+Shift+H");
+    config.hotkeys.media_play_pause =
+        sanitize_hotkey(&config.hotkeys.media_play_pause, "Alt+Shift+P");
+    config.hotkeys.media_next = sanitize_hotkey(&config.hotkeys.media_next, "Alt+Shift+Right");
+    config.hotkeys.media_previous =
+        sanitize_hotkey(&config.hotkeys.media_previous, "Alt+Shift+Left");
 
     config
 }
@@ -217,7 +277,8 @@ fn save_config(path: &PathBuf, config: &AppConfig) {
 }
 
 #[tauri::command]
-async fn get_config(state: tauri::State<'_, AppState>) -> Result<AppConfig, String> {
+async fn get_config(state: tauri::State<'_, AppState>, token: String) -> Result<AppConfig, String> {
+    authorize_command(&state, &token, "get_config")?;
     let config = state.config.lock().map_err(|e| e.to_string())?;
     Ok(config.clone())
 }
@@ -227,7 +288,9 @@ async fn update_config(
     app: AppHandle,
     state: tauri::State<'_, AppState>,
     config: AppConfig,
+    token: String,
 ) -> Result<(), String> {
+    authorize_command(&state, &token, "update_config")?;
     let config = sanitize_config(config);
     {
         let mut current = state.config.lock().map_err(|e| e.to_string())?;
@@ -241,7 +304,13 @@ async fn update_config(
 }
 
 #[tauri::command]
-async fn navigate(window: WebviewWindow, url: String) -> Result<(), String> {
+async fn navigate(
+    window: WebviewWindow,
+    state: tauri::State<'_, AppState>,
+    url: String,
+    token: String,
+) -> Result<(), String> {
+    authorize_command(&state, &token, "navigate")?;
     let url = normalize_url(&url)?;
     window
         .eval(&format!("window.location.href = {:?}", url))
@@ -253,7 +322,9 @@ async fn toggle_always_on_top(
     app: AppHandle,
     window: WebviewWindow,
     state: tauri::State<'_, AppState>,
+    token: String,
 ) -> Result<bool, String> {
+    authorize_command(&state, &token, "toggle_always_on_top")?;
     let current = window.is_always_on_top().map_err(|e| e.to_string())?;
     let new_value = !current;
     window
@@ -277,7 +348,9 @@ async fn set_opacity(
     window: WebviewWindow,
     state: tauri::State<'_, AppState>,
     opacity: f64,
+    token: String,
 ) -> Result<(), String> {
+    authorize_command(&state, &token, "set_opacity")?;
     let opacity = opacity.clamp(0.1, 1.0);
     opacity::set_window_opacity(&window, opacity);
 
@@ -293,7 +366,13 @@ async fn set_opacity(
 }
 
 #[tauri::command]
-async fn set_opacity_live(window: WebviewWindow, opacity: f64) -> Result<(), String> {
+async fn set_opacity_live(
+    window: WebviewWindow,
+    state: tauri::State<'_, AppState>,
+    opacity: f64,
+    token: String,
+) -> Result<(), String> {
+    authorize_command(&state, &token, "set_opacity_live")?;
     let opacity = opacity.clamp(0.1, 1.0);
     opacity::set_window_opacity(&window, opacity);
     Ok(())
@@ -304,7 +383,9 @@ async fn toggle_locked(
     app: AppHandle,
     window: WebviewWindow,
     state: tauri::State<'_, AppState>,
+    token: String,
 ) -> Result<bool, String> {
+    authorize_command(&state, &token, "toggle_locked")?;
     let new_value = {
         let mut config = state.config.lock().map_err(|e| e.to_string())?;
         let new_value = !config.window.locked;
@@ -375,27 +456,49 @@ fn persist_window_geometry<R: Runtime>(
 async fn save_window_geometry(
     window: WebviewWindow,
     state: tauri::State<'_, AppState>,
+    token: String,
 ) -> Result<(), String> {
+    authorize_command(&state, &token, "save_window_geometry")?;
     persist_window_geometry(&window, &state)
 }
 
 #[tauri::command]
-async fn open_settings(window: WebviewWindow) -> Result<(), String> {
+async fn open_settings(
+    window: WebviewWindow,
+    state: tauri::State<'_, AppState>,
+    token: String,
+) -> Result<(), String> {
+    authorize_command(&state, &token, "open_settings")?;
     window.emit("open-settings", ()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-async fn minimize_window(window: WebviewWindow) -> Result<(), String> {
+async fn minimize_window(
+    window: WebviewWindow,
+    state: tauri::State<'_, AppState>,
+    token: String,
+) -> Result<(), String> {
+    authorize_command(&state, &token, "minimize_window")?;
     window.minimize().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-async fn close_window(window: WebviewWindow) -> Result<(), String> {
+async fn close_window(
+    window: WebviewWindow,
+    state: tauri::State<'_, AppState>,
+    token: String,
+) -> Result<(), String> {
+    authorize_command(&state, &token, "close_window")?;
     window.close().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-async fn maximize_toggle(window: WebviewWindow) -> Result<(), String> {
+async fn maximize_toggle(
+    window: WebviewWindow,
+    state: tauri::State<'_, AppState>,
+    token: String,
+) -> Result<(), String> {
+    authorize_command(&state, &token, "maximize_toggle")?;
     if window.is_maximized().map_err(|e| e.to_string())? {
         window.unmaximize().map_err(|e| e.to_string())
     } else {
@@ -404,7 +507,12 @@ async fn maximize_toggle(window: WebviewWindow) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn get_version(app: AppHandle) -> Result<String, String> {
+async fn get_version(
+    app: AppHandle,
+    state: tauri::State<'_, AppState>,
+    token: String,
+) -> Result<String, String> {
+    authorize_command(&state, &token, "get_version")?;
     Ok(app.package_info().version.to_string())
 }
 
@@ -415,7 +523,12 @@ struct UpdateInfo {
 }
 
 #[tauri::command]
-async fn check_for_updates(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
+async fn check_for_updates(
+    app: AppHandle,
+    state: tauri::State<'_, AppState>,
+    token: String,
+) -> Result<Option<UpdateInfo>, String> {
+    authorize_command(&state, &token, "check_for_updates")?;
     let updater = app.updater().map_err(|e| e.to_string())?;
     match updater.check().await {
         Ok(Some(update)) => Ok(Some(UpdateInfo {
@@ -427,17 +540,17 @@ async fn check_for_updates(app: AppHandle) -> Result<Option<UpdateInfo>, String>
     }
 }
 
-#[tauri::command]
-async fn install_update(app: AppHandle) -> Result<(), String> {
+async fn install_update<R: Runtime>(app: AppHandle<R>) -> Result<bool, String> {
     let updater = app.updater().map_err(|e| e.to_string())?;
     if let Some(update) = updater.check().await.map_err(|e| e.to_string())? {
+        info!(version = %update.version, "Installing update from native action");
         update
             .download_and_install(|_, _| {}, || {})
             .await
             .map_err(|e| e.to_string())?;
-        app.restart();
+        return Ok(true);
     }
-    Ok(())
+    Ok(false)
 }
 
 #[tauri::command]
@@ -445,7 +558,9 @@ async fn exit_click_through(
     app: AppHandle,
     window: WebviewWindow,
     state: tauri::State<'_, AppState>,
+    token: String,
 ) -> Result<(), String> {
+    authorize_command(&state, &token, "exit_click_through")?;
     let mut config = state.config.lock().map_err(|e| e.to_string())?;
     if config.window.locked {
         config.window.locked = false;
@@ -467,7 +582,9 @@ async fn exit_click_through(
 async fn navigate_home(
     window: WebviewWindow,
     state: tauri::State<'_, AppState>,
+    token: String,
 ) -> Result<(), String> {
+    authorize_command(&state, &token, "navigate_home")?;
     let home_url = {
         let mut config = state.config.lock().map_err(|e| e.to_string())?;
         config.last_url = None;
@@ -610,6 +727,35 @@ fn do_opacity_change<R: Runtime>(app: &AppHandle<R>, delta: f64) {
     }
 }
 
+fn do_media_action<R: Runtime>(app: &AppHandle<R>, script: &'static str) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.eval(script);
+    }
+}
+
+fn do_install_update<R: Runtime>(app: &AppHandle<R>) {
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        match install_update(app_handle.clone()).await {
+            Ok(true) => {
+                let _ = app_handle.emit(
+                    "update-install-status",
+                    "Installing update and restarting...",
+                );
+                app_handle.restart();
+            }
+            Ok(false) => {
+                let _ = app_handle.emit("update-install-status", "No update available to install");
+                info!("Install update requested but no update was available");
+            }
+            Err(e) => {
+                let _ = app_handle.emit("update-install-status", format!("Install failed: {}", e));
+                error!("Install update failed: {}", e);
+            }
+        }
+    });
+}
+
 fn register_hotkeys<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::Error>> {
     let hotkeys = {
         let state = app.state::<AppState>();
@@ -643,8 +789,11 @@ fn register_hotkeys<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::e
         let code = match parts.last()?.trim().to_lowercase().as_str() {
             "t" => Code::KeyT,
             "d" => Code::KeyD,
+            "p" => Code::KeyP,
             "up" => Code::ArrowUp,
             "down" => Code::ArrowDown,
+            "left" => Code::ArrowLeft,
+            "right" => Code::ArrowRight,
             "h" => Code::KeyH,
             _ => return None,
         };
@@ -699,11 +848,12 @@ fn register_hotkeys<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::e
     }
 
     if let Some((modifiers, code)) = parse_hotkey(&hotkeys.toggle_visibility) {
+        let app_h = app_handle.clone();
         let shortcut = Shortcut::new(Some(modifiers), code);
         app.global_shortcut()
             .on_shortcut(shortcut, move |_app, _shortcut, event| {
                 if event.state == ShortcutState::Pressed {
-                    if let Some(window) = app_handle.get_webview_window("main") {
+                    if let Some(window) = app_h.get_webview_window("main") {
                         if window.is_visible().unwrap_or(false) {
                             let _ = window.hide();
                         } else {
@@ -711,6 +861,39 @@ fn register_hotkeys<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::e
                             let _ = window.set_focus();
                         }
                     }
+                }
+            })?;
+    }
+
+    if let Some((modifiers, code)) = parse_hotkey(&hotkeys.media_play_pause) {
+        let app_h = app_handle.clone();
+        let shortcut = Shortcut::new(Some(modifiers), code);
+        app.global_shortcut()
+            .on_shortcut(shortcut, move |_app, _shortcut, event| {
+                if event.state == ShortcutState::Pressed {
+                    do_media_action(&app_h, MEDIA_PLAY_PAUSE_SCRIPT);
+                }
+            })?;
+    }
+
+    if let Some((modifiers, code)) = parse_hotkey(&hotkeys.media_next) {
+        let app_h = app_handle.clone();
+        let shortcut = Shortcut::new(Some(modifiers), code);
+        app.global_shortcut()
+            .on_shortcut(shortcut, move |_app, _shortcut, event| {
+                if event.state == ShortcutState::Pressed {
+                    do_media_action(&app_h, MEDIA_NEXT_SCRIPT);
+                }
+            })?;
+    }
+
+    if let Some((modifiers, code)) = parse_hotkey(&hotkeys.media_previous) {
+        let app_h = app_handle.clone();
+        let shortcut = Shortcut::new(Some(modifiers), code);
+        app.global_shortcut()
+            .on_shortcut(shortcut, move |_app, _shortcut, event| {
+                if event.state == ShortcutState::Pressed {
+                    do_media_action(&app_h, MEDIA_PREVIOUS_SCRIPT);
                 }
             })?;
     }
@@ -743,6 +926,13 @@ fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::
         None::<&str>,
     )?;
     let show = MenuItem::with_id(app, "show", "Show/Hide Window", true, None::<&str>)?;
+    let install_update = MenuItem::with_id(
+        app,
+        "install_update",
+        "Install Available Update",
+        true,
+        None::<&str>,
+    )?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
     let menu = Menu::with_items(
@@ -754,6 +944,7 @@ fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::
             &toggle_lock,
             &exit_lock,
             &show,
+            &install_update,
             &quit,
         ],
     )?;
@@ -799,6 +990,9 @@ fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::
                         let _ = window.set_focus();
                     }
                 }
+            }
+            "install_update" => {
+                do_install_update(app);
             }
             "quit" => {
                 app.exit(0);
@@ -866,10 +1060,13 @@ fn run() {
             let config_path = get_config_path(&app.handle());
             let config = load_config(&config_path);
             info!(path = %config_path.display(), "Configuration loaded");
+            let command_token = Uuid::new_v4().to_string();
+            let injection_script = build_injection_script(&command_token);
 
             let state = AppState {
                 config: Mutex::new(config.clone()),
                 config_path,
+                command_token,
             };
             app.manage(state);
 
@@ -879,7 +1076,7 @@ fn run() {
                     .inner_size(1280.0, 720.0)
                     .decorations(false)
                     .always_on_top(true)
-                    .initialization_script(INJECTION_SCRIPT)
+                    .initialization_script(&injection_script)
                     .user_agent(USER_AGENT)
                     .build()?;
 
@@ -931,7 +1128,6 @@ fn run() {
             maximize_toggle,
             get_version,
             check_for_updates,
-            install_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

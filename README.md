@@ -67,6 +67,9 @@ These work globally, even when FloatView isn't focused:
 | Increase opacity | `Alt+Shift+Up` | `⌥⇧Up` |
 | Decrease opacity | `Alt+Shift+Down` | `⌥⇧Down` |
 | Show/hide window | `Alt+Shift+H` | `⌥⇧H` |
+| Play/pause media | `Alt+Shift+P` | `⌥⇧P` |
+| Skip forward | `Alt+Shift+Right` | `⌥⇧Right` |
+| Skip back | `Alt+Shift+Left` | `⌥⇧Left` |
 
 These only work when the window is focused:
 
@@ -99,7 +102,7 @@ Press `Alt+Shift+D` to make the window completely transparent to mouse clicks --
 - **System Tray** -- Minimize to tray, quick controls via right-click menu
 - **Global Hotkeys** -- Control everything without switching focus
 - **Single Instance** -- Opening FloatView again brings the existing window to front
-- **In-App Updates** -- Check for updates and install from Settings
+- **In-App Updates** -- Check from Settings, install from tray menu
 - **Cross-Platform** -- Windows and macOS
 - **Tiny Footprint** -- ~3MB binary, uses system webview
 
@@ -132,7 +135,10 @@ You can edit the file directly to customize hotkeys or other settings:
     "toggle_locked": "Alt+Shift+D",
     "opacity_up": "Alt+Shift+Up",
     "opacity_down": "Alt+Shift+Down",
-    "toggle_visibility": "Alt+Shift+H"
+    "toggle_visibility": "Alt+Shift+H",
+    "media_play_pause": "Alt+Shift+P",
+    "media_next": "Alt+Shift+Right",
+    "media_previous": "Alt+Shift+Left"
   }
 }
 ```

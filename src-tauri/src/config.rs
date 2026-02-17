@@ -34,6 +34,9 @@ pub struct HotkeyConfig {
     pub opacity_up: String,
     pub opacity_down: String,
     pub toggle_visibility: String,
+    pub media_play_pause: String,
+    pub media_next: String,
+    pub media_previous: String,
 }
 
 impl Default for HotkeyConfig {
@@ -44,6 +47,9 @@ impl Default for HotkeyConfig {
             opacity_up: "Alt+Shift+Up".to_string(),
             opacity_down: "Alt+Shift+Down".to_string(),
             toggle_visibility: "Alt+Shift+H".to_string(),
+            media_play_pause: "Alt+Shift+P".to_string(),
+            media_next: "Alt+Shift+Right".to_string(),
+            media_previous: "Alt+Shift+Left".to_string(),
         }
     }
 }
