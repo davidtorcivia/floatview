@@ -101,7 +101,7 @@ jobs:
 
       - name: Notarize macOS app
         if: matrix.platform == 'macos-latest'
-        timeout-minutes: 120
+        timeout-minutes: 360
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
@@ -126,12 +126,12 @@ jobs:
             echo "$LABEL submission ID: $SUB_ID"
 
             local STATUS="In Progress"
-            for i in $(seq 1 120); do
+            for i in $(seq 1 360); do
               sleep 30
               STATUS=$(xcrun notarytool info "$SUB_ID" \
                 --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" \
                 --output-format json 2>/dev/null | jq -r '.status' 2>/dev/null) || STATUS="polling-error"
-              echo "  [$LABEL] Poll $i/120 ($((i / 2))m$((i % 2 * 30))s): $STATUS"
+              echo "  [$LABEL] Poll $i/360 ($((i / 2))m$((i % 2 * 30))s): $STATUS"
               case "$STATUS" in
                 Accepted) echo "$LABEL notarized successfully!"; return 0 ;;
                 Invalid)
@@ -143,7 +143,7 @@ jobs:
                 *) ;; # In Progress, polling-error, or anything else: keep waiting
               esac
             done
-            echo "::error::$LABEL notarization timed out after 60 min (last status: $STATUS)"
+            echo "::error::$LABEL notarization timed out after 3 hours (last status: $STATUS)"
             echo "Submission ID: $SUB_ID"
             echo "--- Notarization Log ---"
             xcrun notarytool log "$SUB_ID" \
