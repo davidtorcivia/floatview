@@ -72,8 +72,13 @@ jobs:
           # Add to search list
           security list-keychain -d user -s "$KEYCHAIN_PATH"
 
+      - name: Verify network connectivity (macOS notarization needs it)
+        if: matrix.platform == 'macos-latest'
+        run: curl -sf --max-time 10 https://appstoreconnect.apple.com > /dev/null
+
       - name: Build Tauri app
         id: tauri-build
+        timeout-minutes: 30
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
