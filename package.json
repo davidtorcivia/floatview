@@ -1,6 +1,6 @@
 {
   "name": "floatview",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "A minimal floating browser window for streaming media on a secondary monitor",
   "scripts": {
     "tauri": "tauri",

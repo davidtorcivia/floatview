@@ -85,9 +85,6 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'nightly' }}
           releaseName: ${{ github.ref_type == 'tag' && format('FloatView {0}', github.ref_name) || 'FloatView Nightly' }}
@@ -101,6 +98,67 @@ jobs:
           prerelease: ${{ github.ref_type != 'tag' }}
           includeUpdaterJson: true
           args: ${{ matrix.args }}
+
+      - name: Notarize macOS app
+        if: matrix.platform == 'macos-latest'
+        timeout-minutes: 30
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ github.ref_type == 'tag' && github.ref_name || 'nightly' }}"
+          BUNDLE="src-tauri/target/universal-apple-darwin/release/bundle"
+          APP="$BUNDLE/macos/FloatView.app"
+
+          # Notarize the .app
+          echo "::group::Notarize .app"
+          ditto -c -k --keepParent "$APP" /tmp/FloatView.zip
+          xcrun notarytool submit /tmp/FloatView.zip \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+          echo "::endgroup::"
+
+          # Staple the notarization ticket
+          echo "::group::Staple .app"
+          xcrun stapler staple "$APP"
+          echo "::endgroup::"
+
+          # Re-package .app.tar.gz with the stapled app
+          echo "::group::Re-package .app.tar.gz"
+          tar czf "$BUNDLE/macos/FloatView.app.tar.gz" -C "$BUNDLE/macos" FloatView.app
+          echo "::endgroup::"
+
+          # Re-sign the .app.tar.gz for the updater
+          echo "::group::Re-sign for updater"
+          npx tauri signer sign "$BUNDLE/macos/FloatView.app.tar.gz"
+          echo "::endgroup::"
+
+          # Notarize and staple the .dmg
+          echo "::group::Notarize .dmg"
+          DMG=$(ls "$BUNDLE/dmg/"*.dmg)
+          xcrun notarytool submit "$DMG" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+          xcrun stapler staple "$DMG"
+          echo "::endgroup::"
+
+          # Re-upload notarized artifacts to the release
+          echo "::group::Upload notarized artifacts"
+          gh release upload "$TAG" \
+            "$BUNDLE/macos/FloatView.app.tar.gz" \
+            "$BUNDLE/macos/FloatView.app.tar.gz.sig" \
+            "$DMG" \
+            --clobber
+          echo "::endgroup::"
 
       - name: Rename Windows portable exe
         if: matrix.platform == 'windows-latest'
