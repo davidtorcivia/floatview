@@ -101,7 +101,7 @@ jobs:
 
       - name: Notarize macOS app
         if: matrix.platform == 'macos-latest'
-        timeout-minutes: 30
+        timeout-minutes: 120
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
@@ -115,43 +115,64 @@ jobs:
           BUNDLE="src-tauri/target/universal-apple-darwin/release/bundle"
           APP="$BUNDLE/macos/FloatView.app"
 
-          # Notarize the .app
+          # Submit for notarization, poll for status, fetch log on failure
+          notarize() {
+            local FILE="$1" LABEL="$2"
+            echo "Submitting $LABEL for notarization..."
+            local SUB_ID
+            SUB_ID=$(xcrun notarytool submit "$FILE" \
+              --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" \
+              --output-format json | jq -r '.id')
+            echo "$LABEL submission ID: $SUB_ID"
+
+            local STATUS="In Progress"
+            for i in $(seq 1 90); do
+              sleep 30
+              STATUS=$(xcrun notarytool info "$SUB_ID" \
+                --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" \
+                --output-format json 2>/dev/null | jq -r '.status' 2>/dev/null) || STATUS="Unknown"
+              echo "  [$LABEL] Poll $i/90 ($((i / 2))m$((i % 2 * 30))s): $STATUS"
+              case "$STATUS" in
+                Accepted) echo "$LABEL notarized successfully!"; return 0 ;;
+                "In Progress") ;;
+                *)
+                  echo "::error::$LABEL notarization failed ($STATUS)"
+                  echo "--- Notarization Log ---"
+                  xcrun notarytool log "$SUB_ID" \
+                    --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" 2>&1 || true
+                  return 1 ;;
+              esac
+            done
+            echo "::error::$LABEL notarization timed out after 45 min (last status: $STATUS)"
+            echo "--- Notarization Log ---"
+            xcrun notarytool log "$SUB_ID" \
+              --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" 2>&1 || true
+            return 1
+          }
+
           echo "::group::Notarize .app"
           ditto -c -k --keepParent "$APP" /tmp/FloatView.zip
-          xcrun notarytool submit /tmp/FloatView.zip \
-            --apple-id "$APPLE_ID" \
-            --password "$APPLE_PASSWORD" \
-            --team-id "$APPLE_TEAM_ID" \
-            --wait
+          notarize /tmp/FloatView.zip ".app"
           echo "::endgroup::"
 
-          # Staple the notarization ticket
           echo "::group::Staple .app"
           xcrun stapler staple "$APP"
           echo "::endgroup::"
 
-          # Re-package .app.tar.gz with the stapled app
           echo "::group::Re-package .app.tar.gz"
           tar czf "$BUNDLE/macos/FloatView.app.tar.gz" -C "$BUNDLE/macos" FloatView.app
           echo "::endgroup::"
 
-          # Re-sign the .app.tar.gz for the updater
           echo "::group::Re-sign for updater"
           npx tauri signer sign "$BUNDLE/macos/FloatView.app.tar.gz"
           echo "::endgroup::"
 
-          # Notarize and staple the .dmg
           echo "::group::Notarize .dmg"
           DMG=$(ls "$BUNDLE/dmg/"*.dmg)
-          xcrun notarytool submit "$DMG" \
-            --apple-id "$APPLE_ID" \
-            --password "$APPLE_PASSWORD" \
-            --team-id "$APPLE_TEAM_ID" \
-            --wait
+          notarize "$DMG" ".dmg"
           xcrun stapler staple "$DMG"
           echo "::endgroup::"
 
-          # Re-upload notarized artifacts to the release
           echo "::group::Upload notarized artifacts"
           gh release upload "$TAG" \
             "$BUNDLE/macos/FloatView.app.tar.gz" \
