@@ -1022,21 +1022,50 @@ fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::
     Ok(())
 }
 
+fn is_position_visible(
+    monitors: &[tauri::Monitor],
+    x: i32, y: i32, width: i32, height: i32,
+) -> bool {
+    const MIN_OVERLAP: i32 = 50;
+    for monitor in monitors {
+        let mp = monitor.position();
+        let ms = monitor.size();
+        let mx = mp.x;
+        let my = mp.y;
+        let mw = ms.width as i32;
+        let mh = ms.height as i32;
+        let overlap_x = (x + width).min(mx + mw) - x.max(mx);
+        let overlap_y = (y + height).min(my + mh) - y.max(my);
+        if overlap_x >= MIN_OVERLAP && overlap_y >= MIN_OVERLAP {
+            return true;
+        }
+    }
+    false
+}
+
 fn apply_window_state(window: &WebviewWindow, config: &AppConfig) {
     let _ = window.set_always_on_top(config.window.always_on_top);
     opacity::set_window_opacity(window, config.window.opacity);
 
-    if config.window.width > 0 && config.window.height > 0 {
-        let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
-            width: config.window.width as u32,
-            height: config.window.height as u32,
+    let width = if config.window.width > 0 { config.window.width } else { 1280 };
+    let height = if config.window.height > 0 { config.window.height } else { 720 };
+
+    let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
+        width: width as u32,
+        height: height as u32,
+    }));
+
+    let monitors = window.available_monitors().unwrap_or_default();
+    if !monitors.is_empty()
+        && !is_position_visible(&monitors, config.window.x, config.window.y, width, height)
+    {
+        let _ = window.center();
+    } else {
+        let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+            x: config.window.x,
+            y: config.window.y,
         }));
     }
-
-    let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
-        x: config.window.x,
-        y: config.window.y,
-    }));
 }
 
 fn run() {

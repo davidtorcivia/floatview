@@ -958,9 +958,9 @@
             }
             item.dataset.url = url;
             item.textContent = url;
-            item.addEventListener('click', async () => {
+            item.addEventListener('click', () => {
                 if (url && !item.classList.contains('current')) {
-                    await invoke('set_url', { url });
+                    invoke('set_url', { url });
                     window.location.href = url;
                 }
             });
@@ -1090,7 +1090,12 @@
             tauriInvoke = window.__TAURI__.core.invoke.bind(window.__TAURI__.core);
         }
         if (tauriInvoke) {
-            return tauriInvoke(cmd, { ...args, token: COMMAND_TOKEN });
+            try {
+                return await tauriInvoke(cmd, { ...args, token: COMMAND_TOKEN });
+            } catch (e) {
+                console.warn('FloatView: IPC call failed for', cmd, e);
+                return null;
+            }
         }
         console.warn('FloatView: Tauri IPC not available for:', cmd);
         return null;
@@ -1111,7 +1116,7 @@
                 url = 'https://' + url;
             }
             if (url) {
-                await invoke('set_url', { url });
+                invoke('set_url', { url });
                 window.location.href = url;
             }
         }
@@ -1337,6 +1342,7 @@
         hideContextMenu();
         await invoke('save_window_geometry');
         await invoke('close_window');
+        try { window.close(); } catch {}
     });
 
     btnMinimize.addEventListener('click', async () => {
@@ -1346,6 +1352,7 @@
     btnClose.addEventListener('click', async () => {
         await invoke('save_window_geometry');
         await invoke('close_window');
+        try { window.close(); } catch {}
     });
 
     document.addEventListener('keydown', async (e) => {
@@ -1408,6 +1415,13 @@
         goToStep(0);
     }
 
+    function isErrorPage() {
+        try {
+            const text = (document.body?.innerText || '').substring(0, 2000);
+            return /ERR_(?:SSL_|CONNECTION_|NAME_NOT_RESOLVED|CERT_|TIMED_OUT|EMPTY_RESPONSE|FAILED|BLOCKED|TUNNEL_|NETWORK_|INTERNET_|ABORTED|ADDRESS_|INVALID)/.test(text);
+        } catch { return false; }
+    }
+
     async function initConfig() {
         try {
             config = await invoke('get_config');
@@ -1425,6 +1439,22 @@
             }
         } catch (e) {
             console.warn('Failed to load config:', e);
+        }
+
+        // Detect error pages (SSL errors, connection failures, etc.)
+        if (isErrorPage()) {
+            console.warn('FloatView: error page detected, clearing last_url');
+            if (config) {
+                config.last_url = '';
+                invoke('set_url', { url: '' }); // fire-and-forget, may fail if IPC is broken
+            }
+            // Auto-redirect to home URL unless it's the one that failed
+            const failedUrl = window.location.href;
+            const homeUrl = config?.home_url;
+            if (homeUrl && failedUrl !== homeUrl) {
+                window.location.href = homeUrl;
+                return;
+            }
         }
 
         // Pre-fill URL bar with current page URL (prefer actual URL over config)
