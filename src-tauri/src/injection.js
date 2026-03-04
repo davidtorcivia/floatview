@@ -958,10 +958,9 @@
             }
             item.dataset.url = url;
             item.textContent = url;
-            item.addEventListener('click', () => {
+            item.addEventListener('click', async () => {
                 if (url && !item.classList.contains('current')) {
-                    invoke('set_url', { url });
-                    window.location.href = url;
+                    await invoke('navigate', { url });
                 }
             });
             recentDropdown.appendChild(item);
@@ -1116,8 +1115,7 @@
                 url = 'https://' + url;
             }
             if (url) {
-                invoke('set_url', { url });
-                window.location.href = url;
+                await invoke('navigate', { url });
             }
         }
     });
@@ -1432,6 +1430,12 @@
                 btnLock.classList.toggle('active', config.window.locked);
                 opacitySlider.value = Math.round(config.window.opacity * 100);
                 updateRecentDropdown();
+                if (config.window.locked) {
+                    hideStrip();
+                    container.style.display = 'none';
+                } else {
+                    container.style.display = '';
+                }
 
                 if (config.first_run) {
                     showTutorial();
@@ -1443,11 +1447,7 @@
 
         // Detect error pages (SSL errors, connection failures, etc.)
         if (isErrorPage()) {
-            console.warn('FloatView: error page detected, clearing last_url');
-            if (config) {
-                config.last_url = '';
-                invoke('set_url', { url: '' }); // fire-and-forget, may fail if IPC is broken
-            }
+            console.warn('FloatView: error page detected');
             // Auto-redirect to home URL unless it's the one that failed
             const failedUrl = window.location.href;
             const homeUrl = config?.home_url;
@@ -1459,8 +1459,9 @@
 
         // Pre-fill URL bar with current page URL (prefer actual URL over config)
         const currentUrl = window.location.href;
-        if (currentUrl && !currentUrl.startsWith('tauri://') && currentUrl !== 'about:blank') {
+        if (currentUrl && /^https?:\/\//i.test(currentUrl) && currentUrl !== 'about:blank') {
             urlInput.value = currentUrl;
+            await invoke('set_url', { url: currentUrl });
         } else if (config && config.last_url) {
             urlInput.value = config.last_url;
         }

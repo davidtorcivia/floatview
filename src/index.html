@@ -173,11 +173,6 @@
             }
             url = parsed.toString();
 
-            if (window.__TAURI__?.core?.invoke) {
-                const { invoke } = window.__TAURI__.core;
-                await invoke('set_url', { url });
-            }
-
             window.location.href = url;
         }
 

@@ -27,6 +27,8 @@ const COMMAND_TOKEN_PLACEHOLDER: &str = "__FLOATVIEW_COMMAND_TOKEN__";
 const DEFAULT_HOME_URL: &str = "https://www.google.com";
 const MAX_URL_LEN: usize = 2048;
 const MAX_HOTKEY_LEN: usize = 64;
+const DEFAULT_WINDOW_WIDTH: i32 = 1280;
+const DEFAULT_WINDOW_HEIGHT: i32 = 720;
 const MIN_WINDOW_SIZE: i32 = 200;
 const MAX_WINDOW_SIZE: i32 = 10_000;
 
@@ -199,9 +201,21 @@ fn sanitize_hotkey(value: &str, fallback: &str) -> String {
     }
 }
 
+fn normalize_startup_window_size(width: i32, height: i32) -> (i32, i32) {
+    let width = width.clamp(MIN_WINDOW_SIZE, MAX_WINDOW_SIZE);
+    let height = height.clamp(MIN_WINDOW_SIZE, MAX_WINDOW_SIZE);
+    // Recover from persisted minimized-state geometry (commonly clamped to 200x200).
+    if width == MIN_WINDOW_SIZE && height == MIN_WINDOW_SIZE {
+        (DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT)
+    } else {
+        (width, height)
+    }
+}
+
 fn sanitize_config(mut config: AppConfig) -> AppConfig {
-    config.window.width = config.window.width.clamp(MIN_WINDOW_SIZE, MAX_WINDOW_SIZE);
-    config.window.height = config.window.height.clamp(MIN_WINDOW_SIZE, MAX_WINDOW_SIZE);
+    let (width, height) = normalize_startup_window_size(config.window.width, config.window.height);
+    config.window.width = width;
+    config.window.height = height;
     config.window.opacity = config.window.opacity.clamp(0.1, 1.0);
     config.window.monitor = config.window.monitor.max(0);
 
@@ -312,8 +326,9 @@ async fn navigate(
 ) -> Result<(), String> {
     authorize_command(&state, &token, "navigate")?;
     let url = normalize_url(&url)?;
+    persist_recent_url(&state, &url)?;
     window
-        .eval(&format!("window.location.href = {:?}", url))
+        .eval(format!("window.location.href = {:?}", url))
         .map_err(|e| e.to_string())
 }
 
@@ -406,16 +421,35 @@ async fn toggle_locked(
 }
 
 #[tauri::command]
-async fn set_url(state: tauri::State<'_, AppState>, url: String) -> Result<(), String> {
+async fn set_url(
+    state: tauri::State<'_, AppState>,
+    url: String,
+    token: String,
+) -> Result<(), String> {
+    authorize_command(&state, &token, "set_url")?;
     let url = normalize_url(&url)?;
+    persist_recent_url(&state, &url)
+}
+
+fn persist_recent_url(state: &AppState, url: &str) -> Result<(), String> {
     let mut config = state.config.lock().map_err(|e| e.to_string())?;
-    config.last_url = Some(url.clone());
+    let last_url_unchanged = config.last_url.as_deref() == Some(url);
+    if !last_url_unchanged {
+        config.last_url = Some(url.to_string());
+    }
 
     let recent = config.recent_urls.get_or_insert_with(Vec::new);
-    recent.retain(|u| u != &url);
-    recent.insert(0, url.clone());
-    if recent.len() > 10 {
-        recent.truncate(10);
+    let recent_unchanged = recent.first().is_some_and(|u| u == url);
+    if !recent_unchanged {
+        recent.retain(|u| u != url);
+        recent.insert(0, url.to_string());
+        if recent.len() > 10 {
+            recent.truncate(10);
+        }
+    }
+
+    if last_url_unchanged && recent_unchanged {
+        return Ok(());
     }
 
     let config_clone = config.clone();
@@ -435,8 +469,25 @@ fn persist_window_geometry<R: Runtime>(
     window: &WebviewWindow<R>,
     state: &AppState,
 ) -> Result<(), String> {
+    if window.is_minimized().map_err(|e| e.to_string())? {
+        info!("Skipping geometry persistence because window is minimized");
+        return Ok(());
+    }
+    if window.is_maximized().map_err(|e| e.to_string())? {
+        info!("Skipping geometry persistence because window is maximized");
+        return Ok(());
+    }
+
     let position = window.outer_position().map_err(|e| e.to_string())?;
     let size = window.outer_size().map_err(|e| e.to_string())?;
+    if size.width < MIN_WINDOW_SIZE as u32 || size.height < MIN_WINDOW_SIZE as u32 {
+        warn!(
+            width = size.width,
+            height = size.height,
+            "Skipping geometry persistence due to unexpectedly small window size"
+        );
+        return Ok(());
+    }
 
     let mut config = state.config.lock().map_err(|e| e.to_string())?;
     update_window_geometry_config(
@@ -595,7 +646,7 @@ async fn navigate_home(
     };
     let _ = window.eval("window.stop()");
     window
-        .eval(&format!("window.location.href = {:?}", home_url))
+        .eval(format!("window.location.href = {:?}", home_url))
         .map_err(|e| e.to_string())
 }
 
@@ -611,7 +662,7 @@ fn do_navigate_home<R: Runtime>(app: &AppHandle<R>) {
             DEFAULT_HOME_URL.to_string()
         };
         let _ = window.eval("window.stop()");
-        let _ = window.eval(&format!("window.location.href = {:?}", home_url));
+        let _ = window.eval(format!("window.location.href = {:?}", home_url));
     }
 }
 
@@ -628,7 +679,7 @@ fn do_toggle_always_on_top<R: Runtime>(app: &AppHandle<R>) {
         }
 
         let _ = app.emit("always-on-top-changed", new_value);
-        let _ = window.eval(&format!(
+        let _ = window.eval(format!(
             "if(window.__floatViewUpdate) window.__floatViewUpdate('always_on_top', {})",
             new_value
         ));
@@ -655,7 +706,7 @@ fn do_toggle_locked<R: Runtime>(app: &AppHandle<R>) {
         let _ = window.set_ignore_cursor_events(new_value);
 
         let _ = app.emit("locked-changed", new_value);
-        let _ = window.eval(&format!(
+        let _ = window.eval(format!(
             "if(window.__floatViewUpdate) window.__floatViewUpdate('locked', {})",
             new_value
         ));
@@ -720,7 +771,7 @@ fn do_opacity_change<R: Runtime>(app: &AppHandle<R>, delta: f64) {
         opacity::set_window_opacity(&window, new_opacity);
 
         let _ = app.emit("opacity-changed", new_opacity);
-        let _ = window.eval(&format!(
+        let _ = window.eval(format!(
             "if(window.__floatViewUpdate) window.__floatViewUpdate('opacity', {})",
             new_opacity
         ));
@@ -756,14 +807,14 @@ fn do_install_update<R: Runtime>(app: &AppHandle<R>) {
     });
 }
 
-fn register_hotkeys<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::Error>> {
+fn register_hotkeys<R: Runtime>(app: &AppHandle<R>) {
     let hotkeys = {
         let state = app.state::<AppState>();
         let hotkeys = match state.config.lock() {
             Ok(config) => config.hotkeys.clone(),
             Err(e) => {
                 error!("Failed to lock config while registering hotkeys: {}", e);
-                return Ok(());
+                return;
             }
         };
         hotkeys
@@ -806,99 +857,161 @@ fn register_hotkeys<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::e
     if let Some((modifiers, code)) = parse_hotkey(&hotkeys.toggle_on_top) {
         let app_h = app_handle.clone();
         let shortcut = Shortcut::new(Some(modifiers), code);
-        app.global_shortcut()
-            .on_shortcut(shortcut, move |_app, _shortcut, event| {
-                if event.state == ShortcutState::Pressed {
-                    do_toggle_always_on_top(&app_h);
-                }
-            })?;
+        if let Err(e) =
+            app.global_shortcut()
+                .on_shortcut(shortcut, move |_app, _shortcut, event| {
+                    if event.state == ShortcutState::Pressed {
+                        do_toggle_always_on_top(&app_h);
+                    }
+                })
+        {
+            warn!(
+                hotkey = %hotkeys.toggle_on_top,
+                error = %e,
+                "Failed to register toggle_on_top hotkey"
+            );
+        }
     }
 
     if let Some((modifiers, code)) = parse_hotkey(&hotkeys.toggle_locked) {
         let app_h = app_handle.clone();
         let shortcut = Shortcut::new(Some(modifiers), code);
-        app.global_shortcut()
-            .on_shortcut(shortcut, move |_app, _shortcut, event| {
-                if event.state == ShortcutState::Pressed {
-                    do_toggle_locked(&app_h);
-                }
-            })?;
+        if let Err(e) =
+            app.global_shortcut()
+                .on_shortcut(shortcut, move |_app, _shortcut, event| {
+                    if event.state == ShortcutState::Pressed {
+                        do_toggle_locked(&app_h);
+                    }
+                })
+        {
+            warn!(
+                hotkey = %hotkeys.toggle_locked,
+                error = %e,
+                "Failed to register toggle_locked hotkey"
+            );
+        }
     }
 
     if let Some((modifiers, code)) = parse_hotkey(&hotkeys.opacity_up) {
         let app_h = app_handle.clone();
         let shortcut = Shortcut::new(Some(modifiers), code);
-        app.global_shortcut()
-            .on_shortcut(shortcut, move |_app, _shortcut, event| {
-                if event.state == ShortcutState::Pressed {
-                    do_opacity_change(&app_h, 0.05);
-                }
-            })?;
+        if let Err(e) =
+            app.global_shortcut()
+                .on_shortcut(shortcut, move |_app, _shortcut, event| {
+                    if event.state == ShortcutState::Pressed {
+                        do_opacity_change(&app_h, 0.05);
+                    }
+                })
+        {
+            warn!(
+                hotkey = %hotkeys.opacity_up,
+                error = %e,
+                "Failed to register opacity_up hotkey"
+            );
+        }
     }
 
     if let Some((modifiers, code)) = parse_hotkey(&hotkeys.opacity_down) {
         let app_h = app_handle.clone();
         let shortcut = Shortcut::new(Some(modifiers), code);
-        app.global_shortcut()
-            .on_shortcut(shortcut, move |_app, _shortcut, event| {
-                if event.state == ShortcutState::Pressed {
-                    do_opacity_change(&app_h, -0.05);
-                }
-            })?;
+        if let Err(e) =
+            app.global_shortcut()
+                .on_shortcut(shortcut, move |_app, _shortcut, event| {
+                    if event.state == ShortcutState::Pressed {
+                        do_opacity_change(&app_h, -0.05);
+                    }
+                })
+        {
+            warn!(
+                hotkey = %hotkeys.opacity_down,
+                error = %e,
+                "Failed to register opacity_down hotkey"
+            );
+        }
     }
 
     if let Some((modifiers, code)) = parse_hotkey(&hotkeys.toggle_visibility) {
         let app_h = app_handle.clone();
         let shortcut = Shortcut::new(Some(modifiers), code);
-        app.global_shortcut()
-            .on_shortcut(shortcut, move |_app, _shortcut, event| {
-                if event.state == ShortcutState::Pressed {
-                    if let Some(window) = app_h.get_webview_window("main") {
-                        if window.is_visible().unwrap_or(false) {
-                            let _ = window.hide();
-                        } else {
-                            let _ = window.show();
-                            let _ = window.set_focus();
+        if let Err(e) =
+            app.global_shortcut()
+                .on_shortcut(shortcut, move |_app, _shortcut, event| {
+                    if event.state == ShortcutState::Pressed {
+                        if let Some(window) = app_h.get_webview_window("main") {
+                            if window.is_visible().unwrap_or(false) {
+                                let _ = window.hide();
+                            } else {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
                         }
                     }
-                }
-            })?;
+                })
+        {
+            warn!(
+                hotkey = %hotkeys.toggle_visibility,
+                error = %e,
+                "Failed to register toggle_visibility hotkey"
+            );
+        }
     }
 
     if let Some((modifiers, code)) = parse_hotkey(&hotkeys.media_play_pause) {
         let app_h = app_handle.clone();
         let shortcut = Shortcut::new(Some(modifiers), code);
-        app.global_shortcut()
-            .on_shortcut(shortcut, move |_app, _shortcut, event| {
-                if event.state == ShortcutState::Pressed {
-                    do_media_action(&app_h, MEDIA_PLAY_PAUSE_SCRIPT);
-                }
-            })?;
+        if let Err(e) =
+            app.global_shortcut()
+                .on_shortcut(shortcut, move |_app, _shortcut, event| {
+                    if event.state == ShortcutState::Pressed {
+                        do_media_action(&app_h, MEDIA_PLAY_PAUSE_SCRIPT);
+                    }
+                })
+        {
+            warn!(
+                hotkey = %hotkeys.media_play_pause,
+                error = %e,
+                "Failed to register media_play_pause hotkey"
+            );
+        }
     }
 
     if let Some((modifiers, code)) = parse_hotkey(&hotkeys.media_next) {
         let app_h = app_handle.clone();
         let shortcut = Shortcut::new(Some(modifiers), code);
-        app.global_shortcut()
-            .on_shortcut(shortcut, move |_app, _shortcut, event| {
-                if event.state == ShortcutState::Pressed {
-                    do_media_action(&app_h, MEDIA_NEXT_SCRIPT);
-                }
-            })?;
+        if let Err(e) =
+            app.global_shortcut()
+                .on_shortcut(shortcut, move |_app, _shortcut, event| {
+                    if event.state == ShortcutState::Pressed {
+                        do_media_action(&app_h, MEDIA_NEXT_SCRIPT);
+                    }
+                })
+        {
+            warn!(
+                hotkey = %hotkeys.media_next,
+                error = %e,
+                "Failed to register media_next hotkey"
+            );
+        }
     }
 
     if let Some((modifiers, code)) = parse_hotkey(&hotkeys.media_previous) {
         let app_h = app_handle.clone();
         let shortcut = Shortcut::new(Some(modifiers), code);
-        app.global_shortcut()
-            .on_shortcut(shortcut, move |_app, _shortcut, event| {
-                if event.state == ShortcutState::Pressed {
-                    do_media_action(&app_h, MEDIA_PREVIOUS_SCRIPT);
-                }
-            })?;
+        if let Err(e) =
+            app.global_shortcut()
+                .on_shortcut(shortcut, move |_app, _shortcut, event| {
+                    if event.state == ShortcutState::Pressed {
+                        do_media_action(&app_h, MEDIA_PREVIOUS_SCRIPT);
+                    }
+                })
+        {
+            warn!(
+                hotkey = %hotkeys.media_previous,
+                error = %e,
+                "Failed to register media_previous hotkey"
+            );
+        }
     }
-
-    Ok(())
 }
 
 fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::Error>> {
@@ -1024,7 +1137,10 @@ fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::
 
 fn is_position_visible(
     monitors: &[tauri::Monitor],
-    x: i32, y: i32, width: i32, height: i32,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
 ) -> bool {
     const MIN_OVERLAP: i32 = 50;
     for monitor in monitors {
@@ -1046,9 +1162,9 @@ fn is_position_visible(
 fn apply_window_state(window: &WebviewWindow, config: &AppConfig) {
     let _ = window.set_always_on_top(config.window.always_on_top);
     opacity::set_window_opacity(window, config.window.opacity);
+    let _ = window.set_ignore_cursor_events(config.window.locked);
 
-    let width = if config.window.width > 0 { config.window.width } else { 1280 };
-    let height = if config.window.height > 0 { config.window.height } else { 720 };
+    let (width, height) = normalize_startup_window_size(config.window.width, config.window.height);
 
     let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
         width: width as u32,
@@ -1079,14 +1195,14 @@ fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
-            if let Some(guard) = init_logging(&app.handle()) {
+            if let Some(guard) = init_logging(app.handle()) {
                 app.manage(LoggingState { _guard: guard });
             } else {
                 warn!("Structured logging was not initialized");
             }
 
             info!("FloatView setup started");
-            let config_path = get_config_path(&app.handle());
+            let config_path = get_config_path(app.handle());
             let config = load_config(&config_path);
             info!(path = %config_path.display(), "Configuration loaded");
             let command_token = Uuid::new_v4().to_string();
@@ -1102,7 +1218,7 @@ fn run() {
             let window =
                 WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                     .title("FloatView")
-                    .inner_size(1280.0, 720.0)
+                    .inner_size(DEFAULT_WINDOW_WIDTH as f64, DEFAULT_WINDOW_HEIGHT as f64)
                     .decorations(false)
                     .always_on_top(true)
                     .initialization_script(&injection_script)
@@ -1120,7 +1236,7 @@ fn run() {
             let window_clone = window.clone();
             std::thread::spawn(move || {
                 std::thread::sleep(std::time::Duration::from_millis(100));
-                let _ = window_clone.eval(&format!("window.location.href = {:?}", nav_url));
+                let _ = window_clone.eval(format!("window.location.href = {:?}", nav_url));
             });
 
             let app_handle = app.handle().clone();
@@ -1134,8 +1250,8 @@ fn run() {
                 }
             });
 
-            register_hotkeys(&app.handle())?;
-            setup_tray(&app.handle())?;
+            register_hotkeys(app.handle());
+            setup_tray(app.handle())?;
 
             Ok(())
         })
@@ -1225,5 +1341,16 @@ mod tests {
         assert_eq!(config.window.y, 456);
         assert_eq!(config.window.width, MIN_WINDOW_SIZE);
         assert_eq!(config.window.height, MAX_WINDOW_SIZE);
+    }
+
+    #[test]
+    fn sanitize_config_restores_default_size_from_minimized_geometry() {
+        let mut config = AppConfig::default();
+        config.window.width = 0;
+        config.window.height = 0;
+
+        let sanitized = sanitize_config(config);
+        assert_eq!(sanitized.window.width, DEFAULT_WINDOW_WIDTH);
+        assert_eq!(sanitized.window.height, DEFAULT_WINDOW_HEIGHT);
     }
 }
