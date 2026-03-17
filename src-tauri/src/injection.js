@@ -70,9 +70,9 @@
             left: 20px;
             right: 20px;
             height: ${STRIP_HEIGHT}px;
-            background: rgba(30, 41, 59, 0.6);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
+            background: linear-gradient(135deg, rgba(46, 46, 52, 0.62), rgba(36, 36, 42, 0.52));
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
             display: flex;
             align-items: center;
             padding: 0 12px;
@@ -88,7 +88,7 @@
             -webkit-app-region: no-drag;
             border: 1px solid rgba(255,255,255,0.1);
             border-radius: 12px;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15), 0 2px 4px rgba(0,0,0,0.1);
             z-index: 2147483647;
         }
 
@@ -116,8 +116,8 @@
         }
 
         .btn svg {
-            width: 18px;
-            height: 18px;
+            width: 16px;
+            height: 16px;
             stroke: currentColor;
             fill: none;
             stroke-width: 2;
@@ -175,20 +175,20 @@
         }
 
         .opacity-slider::-webkit-slider-runnable-track {
-            height: 4px;
-            background: rgba(255,255,255,0.2);
-            border-radius: 2px;
+            height: 3px;
+            background: rgba(255,255,255,0.15);
+            border-radius: 1.5px;
         }
 
         .opacity-slider::-webkit-slider-thumb {
             -webkit-appearance: none;
-            width: 18px;
-            height: 18px;
+            width: 16px;
+            height: 16px;
             background: #fff;
             border-radius: 50%;
             cursor: pointer;
-            margin-top: -7px;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            margin-top: -6.5px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
         }
 
         .divider {
@@ -208,7 +208,7 @@
             top: 100%;
             left: 0;
             margin-top: 8px;
-            background: rgba(30, 41, 59, 0.7);
+            background: linear-gradient(160deg, rgba(46, 46, 52, 0.72), rgba(36, 36, 42, 0.62));
             backdrop-filter: blur(24px);
             -webkit-backdrop-filter: blur(24px);
             border: 1px solid rgba(255,255,255,0.1);
@@ -218,7 +218,7 @@
             max-height: 280px;
             overflow-y: auto;
             display: none;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1);
         }
 
         .recent-dropdown.visible {
@@ -261,17 +261,17 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            background: rgba(30, 41, 59, 0.7);
-            backdrop-filter: blur(24px);
-            -webkit-backdrop-filter: blur(24px);
-            border: 1px solid rgba(255,255,255,0.12);
+            background: linear-gradient(160deg, rgba(46, 46, 52, 0.78), rgba(36, 36, 42, 0.68));
+            backdrop-filter: blur(28px);
+            -webkit-backdrop-filter: blur(28px);
+            border: 1px solid rgba(255,255,255,0.1);
             border-radius: 16px;
             padding: 24px;
             min-width: 360px;
             max-width: 440px;
             max-height: 80vh;
             overflow-y: auto;
-            box-shadow: 0 12px 48px rgba(0,0,0,0.6);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.18), 0 4px 12px rgba(0,0,0,0.1);
             z-index: 2147483647;
             pointer-events: auto;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -333,7 +333,7 @@
         }
 
         .toggle-switch.active {
-            background: rgba(200, 140, 80, 0.7);
+            background: rgba(52, 199, 89, 0.9);
         }
 
         .toggle-switch::after {
@@ -363,38 +363,39 @@
 
         .settings-slider {
             width: 100%;
-            height: 6px;
+            height: 4px;
             -webkit-appearance: none;
-            background: rgba(255,255,255,0.2);
-            border-radius: 3px;
+            background: rgba(255,255,255,0.15);
+            border-radius: 2px;
             outline: none;
         }
 
         .settings-slider::-webkit-slider-thumb {
             -webkit-appearance: none;
-            width: 20px;
-            height: 20px;
+            width: 18px;
+            height: 18px;
             background: #fff;
             border-radius: 50%;
             cursor: pointer;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
         }
 
         .settings-btn {
-            background: rgba(255,255,255,0.08);
-            border: 1px solid rgba(255,255,255,0.15);
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.12);
             color: #fff;
             padding: 10px 20px;
-            border-radius: 6px;
+            border-radius: 10px;
             font-size: 14px;
             font-family: inherit;
             cursor: pointer;
-            transition: background 0.1s;
+            transition: all 0.15s ease;
             min-height: 44px;
         }
 
         .settings-btn:hover {
-            background: rgba(255,255,255,0.15);
+            background: rgba(255,255,255,0.12);
+            border-color: rgba(255,255,255,0.2);
         }
 
         .settings-btn.danger {
@@ -417,13 +418,13 @@
 
         .context-menu {
             position: fixed;
-            background: rgba(30, 41, 59, 0.7);
+            background: linear-gradient(160deg, rgba(46, 46, 52, 0.78), rgba(36, 36, 42, 0.68));
             backdrop-filter: blur(24px);
             -webkit-backdrop-filter: blur(24px);
-            border: 1px solid rgba(255,255,255,0.12);
+            border: 1px solid rgba(255,255,255,0.1);
             border-radius: 12px;
             min-width: 180px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1);
             z-index: 2147483647;
             pointer-events: auto;
             display: none;
@@ -477,7 +478,9 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0,0,0,0.6);
+            background: rgba(0,0,0,0.3);
+            backdrop-filter: blur(2px);
+            -webkit-backdrop-filter: blur(2px);
             z-index: 2147483646;
             pointer-events: auto;
             display: none;
@@ -495,12 +498,14 @@
         }
 
         .hotkey-info kbd {
-            background: rgba(255,255,255,0.1);
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.08);
             padding: 3px 8px;
-            border-radius: 4px;
+            border-radius: 5px;
             font-family: 'SF Mono', Monaco, monospace;
             font-size: 11px;
             margin: 0 2px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.12);
         }
 
         .settings-version {
@@ -549,17 +554,17 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            background: rgba(30, 41, 59, 0.7);
-            backdrop-filter: blur(24px);
-            -webkit-backdrop-filter: blur(24px);
-            border: 1px solid rgba(255,255,255,0.12);
+            background: linear-gradient(160deg, rgba(46, 46, 52, 0.78), rgba(36, 36, 42, 0.68));
+            backdrop-filter: blur(28px);
+            -webkit-backdrop-filter: blur(28px);
+            border: 1px solid rgba(255,255,255,0.1);
             border-radius: 16px;
             padding: 32px;
             width: 480px;
             max-width: 90vw;
             max-height: 80vh;
             overflow-y: auto;
-            box-shadow: 0 12px 48px rgba(0,0,0,0.6);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.18), 0 4px 12px rgba(0,0,0,0.1);
             z-index: 2147483647;
             pointer-events: auto;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -644,20 +649,21 @@
         }
 
         .tutorial-btn {
-            background: rgba(255,255,255,0.08);
-            border: 1px solid rgba(255,255,255,0.15);
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.12);
             color: #fff;
             padding: 10px 20px;
-            border-radius: 6px;
+            border-radius: 10px;
             font-size: 14px;
             font-family: inherit;
             cursor: pointer;
-            transition: background 0.1s;
+            transition: all 0.15s ease;
             min-height: 40px;
         }
 
         .tutorial-btn:hover {
-            background: rgba(255,255,255,0.15);
+            background: rgba(255,255,255,0.12);
+            border-color: rgba(255,255,255,0.2);
         }
 
         .tutorial-btn.primary {
@@ -716,8 +722,8 @@
 
     // SVG icons
     const icons = {
-        pin: `<svg viewBox="0 0 24 24"><path d="M9 4v6l-2 4v2h5v6l1 1 1-1v-6h5v-2l-2-4V4"/><line x1="8" y1="4" x2="16" y2="4"/></svg>`,
-        pinActive: `<svg viewBox="0 0 24 24"><path d="M9 4v6l-2 4v2h5v6l1 1 1-1v-6h5v-2l-2-4V4" fill="currentColor"/><line x1="8" y1="4" x2="16" y2="4"/></svg>`,
+        pin: `<svg viewBox="0 0 24 24"><path d="M9 3v6l-2 4v2h4v4l1 1 1-1v-4h4v-2l-2-4V3"/><line x1="8" y1="3" x2="16" y2="3"/></svg>`,
+        pinActive: `<svg viewBox="0 0 24 24"><path d="M9 3v6l-2 4v2h4v4l1 1 1-1v-4h4v-2l-2-4V3" fill="currentColor"/><line x1="8" y1="3" x2="16" y2="3"/></svg>`,
         recent: `<svg viewBox="0 0 24 24"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>`,
         lock: `<svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>`,
         lockActive: `<svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" fill="currentColor"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>`,
@@ -1153,12 +1159,13 @@
     });
 
     function sliderToOpacity(val) {
-        const t = val / 100;
-        return Math.max(0.1, t * t);
+        const t = (val - 10) / 90;
+        return 0.1 + 0.9 * (1 - (1 - t) * (1 - t));
     }
 
     function opacityToSlider(opacity) {
-        return Math.round(Math.sqrt(Math.max(0.1, opacity)) * 100);
+        const t = 1 - Math.sqrt(1 - (Math.min(1, Math.max(0.1, opacity)) - 0.1) / 0.9);
+        return Math.round(10 + t * 90);
     }
 
     opacitySlider.addEventListener('input', async (e) => {
@@ -1410,32 +1417,31 @@
         }
     }
 
-    function showTutorial() {
-        let currentStep = 0;
-        const steps = tutorialModal.querySelectorAll('.tutorial-step');
-        const totalSteps = steps.length;
+    let _tutorialCurrentStep = 0;
+    const _tutorialSteps = tutorialModal.querySelectorAll('.tutorial-step');
 
-        function goToStep(n) {
-            steps.forEach(s => s.classList.remove('active'));
-            steps[n].classList.add('active');
-            currentStep = n;
+    function _tutorialGoToStep(n) {
+        _tutorialSteps.forEach(s => s.classList.remove('active'));
+        _tutorialSteps[n].classList.add('active');
+        _tutorialCurrentStep = n;
+    }
+
+    tutorialModal.addEventListener('click', (e) => {
+        const target = e.target;
+        if (target.id === 'tutorial-next') {
+            if (_tutorialCurrentStep < _tutorialSteps.length - 1) _tutorialGoToStep(_tutorialCurrentStep + 1);
+        } else if (target.id === 'tutorial-back') {
+            if (_tutorialCurrentStep > 0) _tutorialGoToStep(_tutorialCurrentStep - 1);
+        } else if (target.id === 'tutorial-skip' || target.id === 'tutorial-finish') {
+            dismissTutorial();
         }
+    });
 
-        tutorialModal.addEventListener('click', (e) => {
-            const target = e.target;
-            if (target.id === 'tutorial-next') {
-                if (currentStep < totalSteps - 1) goToStep(currentStep + 1);
-            } else if (target.id === 'tutorial-back') {
-                if (currentStep > 0) goToStep(currentStep - 1);
-            } else if (target.id === 'tutorial-skip' || target.id === 'tutorial-finish') {
-                dismissTutorial();
-            }
-        });
-
+    function showTutorial() {
         tutorialActive = true;
         tutorialModal.classList.remove('hidden');
         modalOverlay.classList.add('visible');
-        goToStep(0);
+        _tutorialGoToStep(0);
     }
 
     function isErrorPage() {
