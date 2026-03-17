@@ -5,147 +5,338 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FloatView</title>
     <style>
+        :root {
+            --bg-color: #0f172a;
+            --glass-bg: rgba(30, 41, 59, 0.6);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --input-bg: rgba(15, 23, 42, 0.4);
+            --input-focus-border: rgba(59, 130, 246, 0.5);
+        }
+
         * {
             box-sizing: border-box;
             margin: 0;
             padding: 0;
+            user-select: none;
+        }
+
+        input {
+            user-select: auto;
         }
 
         body {
-            background: #1a1a2e;
-            color: #fff;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
             display: flex;
-            flex-direction: column;
             align-items: center;
             justify-content: center;
             min-height: 100vh;
-            padding: 20px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .ambient-bg {
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle at 50% 50%, rgba(59, 130, 246, 0.15), transparent 40%),
+                        radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.15), transparent 40%),
+                        radial-gradient(circle at 20% 80%, rgba(16, 185, 129, 0.1), transparent 40%);
+            animation: rotateBg 30s linear infinite;
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        @keyframes rotateBg {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
 
         .container {
-            max-width: 400px;
+            width: 90%;
+            max-width: 480px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 32px;
+            box-shadow: var(--glass-shadow);
             text-align: center;
+            animation: fadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .header {
+            margin-bottom: 24px;
+        }
+
+        .logo-icon {
+            width: 48px;
+            height: 48px;
+            margin: 0 auto 16px;
+            background: linear-gradient(135deg, var(--accent), #8b5cf6);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        }
+
+        .logo-icon svg {
+            width: 24px;
+            height: 24px;
+            fill: none;
+            stroke: white;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
         }
 
         h1 {
             font-size: 24px;
-            font-weight: 600;
+            font-weight: 700;
+            letter-spacing: -0.5px;
             margin-bottom: 8px;
+            background: linear-gradient(to right, #fff, #cbd5e1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
         }
 
-        p {
-            color: rgba(255, 255, 255, 0.6);
+        p.subtitle {
+            color: var(--text-secondary);
             font-size: 14px;
-            margin-bottom: 24px;
+            line-height: 1.5;
+        }
+
+        .input-group {
+            position: relative;
+            margin-bottom: 16px;
         }
 
         .url-input {
             width: 100%;
-            padding: 12px 16px;
-            font-size: 14px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.1);
-            color: #fff;
+            padding: 14px 16px 14px 44px;
+            font-size: 15px;
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            background: var(--input-bg);
+            color: var(--text-primary);
             outline: none;
-            margin-bottom: 12px;
+            transition: all 0.2s ease;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
         }
 
         .url-input:focus {
-            border-color: rgba(66, 133, 244, 0.6);
-            background: rgba(255, 255, 255, 0.15);
+            border-color: var(--input-focus-border);
+            background: rgba(15, 23, 42, 0.6);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2), inset 0 2px 4px rgba(0,0,0,0.1);
         }
 
         .url-input::placeholder {
-            color: rgba(255, 255, 255, 0.4);
+            color: #64748b;
+        }
+
+        .input-icon {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 18px;
+            height: 18px;
+            color: #64748b;
+            pointer-events: none;
         }
 
         .btn {
             width: 100%;
-            padding: 12px 16px;
-            font-size: 14px;
-            font-weight: 500;
+            padding: 14px 24px;
+            font-size: 15px;
+            font-weight: 600;
             border: none;
-            border-radius: 8px;
-            background: #4285f4;
+            border-radius: 12px;
+            background: var(--accent);
             color: #fff;
             cursor: pointer;
-            transition: background 0.15s;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
         }
 
         .btn:hover {
-            background: #3b77db;
+            background: var(--accent-hover);
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(59, 130, 246, 0.3);
+        }
+
+        .btn:active {
+            transform: translateY(1px);
+            box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
+        }
+
+        .btn svg {
+            width: 18px;
+            height: 18px;
+            transition: transform 0.2s ease;
+        }
+
+        .btn:hover svg {
+            transform: translateX(4px);
         }
 
         .shortcuts {
             margin-top: 32px;
             text-align: left;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 8px;
-            padding: 16px;
+            background: rgba(15, 23, 42, 0.3);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 20px;
         }
 
         .shortcuts h3 {
             font-size: 12px;
-            font-weight: 600;
+            font-weight: 700;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: rgba(255, 255, 255, 0.5);
-            margin-bottom: 12px;
+            letter-spacing: 1px;
+            color: var(--text-secondary);
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .shortcuts h3::before {
+            content: '';
+            display: block;
+            width: 4px;
+            height: 4px;
+            border-radius: 50%;
+            background: var(--accent);
+        }
+
+        .shortcut-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 12px;
         }
 
         .shortcut {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 4px 0;
             font-size: 13px;
+            color: #cbd5e1;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
         }
 
-        .shortcut kbd {
+        .shortcut:last-child {
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+
+        .kbd-group {
+            display: flex;
+            gap: 4px;
+        }
+
+        kbd {
             background: rgba(255, 255, 255, 0.1);
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-family: inherit;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
             font-size: 11px;
+            color: #f8fafc;
+            box-shadow: 0 2px 0 rgba(0,0,0,0.2);
         }
     </style>
 </head>
 <body>
+    <div class="ambient-bg"></div>
     <div class="container">
-        <h1>FloatView</h1>
-        <p>Floating browser window for streaming media</p>
+        <div class="header">
+            <div class="logo-icon">
+                <svg viewBox="0 0 24 24">
+                    <path d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                </svg>
+            </div>
+            <h1>FloatView</h1>
+            <p class="subtitle">Floating browser window for streaming media</p>
+        </div>
 
-        <input type="text" class="url-input" id="url-input" placeholder="Enter URL (e.g., http://192.168.1.XXX:8096)" autofocus>
+        <div class="input-group">
+            <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="2" y1="12" x2="22" y2="12"></line>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+            </svg>
+            <input type="text" class="url-input" id="url-input" placeholder="Enter URL (e.g., http://192.168.1.XXX:8096)" autofocus>
+        </div>
 
-        <button class="btn" id="go-btn">Go</button>
+        <button class="btn" id="go-btn">
+            Launch Stream
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+                <polyline points="12 5 19 12 12 19"></polyline>
+            </svg>
+        </button>
 
         <div class="shortcuts">
             <h3>Keyboard Shortcuts</h3>
-            <div class="shortcut">
-                <span>Toggle always on top</span>
-                <kbd>Alt+Shift+T</kbd>
-            </div>
-            <div class="shortcut">
-                <span>Toggle click-through</span>
-                <kbd>Alt+Shift+D</kbd>
-            </div>
-            <div class="shortcut">
-                <span>Adjust opacity</span>
-                <kbd>Alt+Shift+↑/↓</kbd>
-            </div>
-            <div class="shortcut">
-                <span>Show/hide window</span>
-                <kbd>Alt+Shift+H</kbd>
-            </div>
-            <div class="shortcut">
-                <span>Play/pause media</span>
-                <kbd>Alt+Shift+P</kbd>
-            </div>
-            <div class="shortcut">
-                <span>Skip forward/back</span>
-                <kbd>Alt+Shift+→/←</kbd>
+            <div class="shortcut-grid">
+                <div class="shortcut">
+                    <span>Toggle always on top</span>
+                    <div class="kbd-group">
+                        <kbd>Alt</kbd><kbd>Shift</kbd><kbd>T</kbd>
+                    </div>
+                </div>
+                <div class="shortcut">
+                    <span>Toggle click-through</span>
+                    <div class="kbd-group">
+                        <kbd>Alt</kbd><kbd>Shift</kbd><kbd>D</kbd>
+                    </div>
+                </div>
+                <div class="shortcut">
+                    <span>Adjust opacity</span>
+                    <div class="kbd-group">
+                        <kbd>Alt</kbd><kbd>Shift</kbd><kbd>↑/↓</kbd>
+                    </div>
+                </div>
+                <div class="shortcut">
+                    <span>Show/hide window</span>
+                    <div class="kbd-group">
+                        <kbd>Alt</kbd><kbd>Shift</kbd><kbd>H</kbd>
+                    </div>
+                </div>
+                <div class="shortcut">
+                    <span>Play/pause media</span>
+                    <div class="kbd-group">
+                        <kbd>Alt</kbd><kbd>Shift</kbd><kbd>P</kbd>
+                    </div>
+                </div>
+                <div class="shortcut">
+                    <span>Skip forward/back</span>
+                    <div class="kbd-group">
+                        <kbd>Alt</kbd><kbd>Shift</kbd><kbd>→/←</kbd>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -173,7 +364,11 @@
             }
             url = parsed.toString();
 
-            window.location.href = url;
+            // Slight delay for button animation
+            goBtn.style.transform = 'scale(0.98)';
+            setTimeout(() => {
+                window.location.href = url;
+            }, 100);
         }
 
         goBtn.addEventListener('click', navigate);

@@ -70,7 +70,9 @@
             left: 0;
             right: 0;
             height: ${STRIP_HEIGHT}px;
-            background: rgba(24, 24, 24, 0.95);
+            background: rgba(30, 41, 59, 0.6);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
             display: flex;
             align-items: center;
             padding: 0 12px;
@@ -97,8 +99,8 @@
             background: transparent;
             border: none;
             color: #ccc;
-            min-width: 44px;
-            height: 44px;
+            min-width: 36px;
+            height: 36px;
             padding: 0;
             border-radius: 6px;
             cursor: pointer;
@@ -109,8 +111,8 @@
         }
 
         .btn svg {
-            width: 22px;
-            height: 22px;
+            width: 18px;
+            height: 18px;
             stroke: currentColor;
             fill: none;
             stroke-width: 2;
@@ -136,7 +138,7 @@
             -webkit-app-region: no-drag;
             flex: 1;
             min-width: 0;
-            min-height: 44px;
+            min-height: 36px;
             background: rgba(255,255,255,0.08);
             border: 1px solid rgba(255,255,255,0.1);
             color: #fff;
@@ -159,7 +161,7 @@
         .opacity-slider {
             -webkit-app-region: no-drag;
             width: 80px;
-            height: 44px;
+            height: 36px;
             padding: 0 4px;
             -webkit-appearance: none;
             background: transparent;
@@ -200,9 +202,11 @@
             top: 100%;
             left: 0;
             margin-top: 8px;
-            background: rgba(30, 30, 30, 0.98);
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
             border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 8px;
+            border-radius: 12px;
             min-width: 240px;
             max-width: 360px;
             max-height: 280px;
@@ -251,9 +255,11 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            background: rgba(28, 28, 28, 0.98);
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
             border: 1px solid rgba(255,255,255,0.12);
-            border-radius: 12px;
+            border-radius: 16px;
             padding: 24px;
             min-width: 360px;
             max-width: 440px;
@@ -405,9 +411,11 @@
 
         .context-menu {
             position: fixed;
-            background: rgba(30, 30, 30, 0.98);
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
             border: 1px solid rgba(255,255,255,0.12);
-            border-radius: 8px;
+            border-radius: 12px;
             min-width: 180px;
             box-shadow: 0 8px 32px rgba(0,0,0,0.5);
             z-index: 2147483647;
@@ -535,9 +543,11 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            background: rgba(28, 28, 28, 0.98);
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
             border: 1px solid rgba(255,255,255,0.12);
-            border-radius: 12px;
+            border-radius: 16px;
             padding: 32px;
             width: 480px;
             max-width: 90vw;
