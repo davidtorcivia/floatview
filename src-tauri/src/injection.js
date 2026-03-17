@@ -41,7 +41,7 @@
             left: 0;
             right: 0;
             height: ${DRAG_BAR_HEIGHT}px;
-            background: linear-gradient(to bottom, rgba(120, 120, 120, 0.6), transparent);
+            background: linear-gradient(to bottom, rgba(80, 80, 84, 0.5), transparent);
             pointer-events: auto;
             z-index: 2147483647;
             cursor: grab;
@@ -86,7 +86,7 @@
             pointer-events: auto;
             user-select: none;
             -webkit-app-region: no-drag;
-            border: 1px solid rgba(255,255,255,0.1);
+            border: none;
             border-radius: 12px;
             box-shadow: 0 8px 24px rgba(0,0,0,0.15), 0 2px 4px rgba(0,0,0,0.1);
             z-index: 2147483647;
@@ -198,31 +198,30 @@
             margin: 0 4px;
         }
 
-        .recent-container {
-            position: relative;
-            -webkit-app-region: no-drag;
-        }
-
         .recent-dropdown {
-            position: absolute;
-            top: 100%;
+            position: fixed;
+            top: 0;
             left: 0;
-            margin-top: 8px;
-            background: linear-gradient(160deg, rgba(46, 46, 52, 0.72), rgba(36, 36, 42, 0.62));
+            background: linear-gradient(160deg, rgba(46, 46, 52, 0.78), rgba(36, 36, 42, 0.72));
             backdrop-filter: blur(24px);
             -webkit-backdrop-filter: blur(24px);
-            border: 1px solid rgba(255,255,255,0.1);
+            border: none;
             border-radius: 12px;
             min-width: 240px;
-            max-width: 360px;
+            max-width: min(360px, calc(100vw - 60px));
             max-height: 280px;
             overflow-y: auto;
-            display: none;
+            opacity: 0;
+            transform: translateY(-4px) scale(0.97);
+            pointer-events: none;
+            transition: opacity 0.18s ease-out, transform 0.18s ease-out;
             box-shadow: 0 10px 30px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1);
         }
 
         .recent-dropdown.visible {
-            display: block;
+            opacity: 1;
+            transform: translateY(0) scale(1);
+            pointer-events: auto;
         }
 
         .recent-item {
@@ -260,26 +259,43 @@
             position: fixed;
             top: 50%;
             left: 50%;
-            transform: translate(-50%, -50%);
+            transform: translate(-50%, -50%) scale(0.96);
             background: linear-gradient(160deg, rgba(46, 46, 52, 0.78), rgba(36, 36, 42, 0.68));
             backdrop-filter: blur(28px);
             -webkit-backdrop-filter: blur(28px);
-            border: 1px solid rgba(255,255,255,0.1);
+            border: none;
             border-radius: 16px;
-            padding: 24px;
+            padding: 0;
             min-width: 360px;
             max-width: 440px;
             max-height: 80vh;
-            overflow-y: auto;
+            overflow: visible;
             box-shadow: 0 20px 60px rgba(0,0,0,0.18), 0 4px 12px rgba(0,0,0,0.1);
             z-index: 2147483647;
             pointer-events: auto;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             color: #fff;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+        }
+
+        .settings-modal.visible {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+            pointer-events: auto;
         }
 
         .settings-modal.hidden {
-            display: none;
+            opacity: 0;
+            transform: translate(-50%, -50%) scale(0.96);
+            pointer-events: none;
+        }
+
+        .settings-scroll {
+            max-height: 80vh;
+            overflow-y: auto;
+            padding: 24px 10px 24px 24px;
         }
 
         .settings-title {
@@ -288,6 +304,43 @@
             margin-bottom: 20px;
             padding-bottom: 16px;
             border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .settings-close-btn {
+            position: absolute;
+            top: 0;
+            right: -48px;
+            background: rgba(60, 60, 66, 0.95);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: none;
+            color: rgba(255,255,255,0.7);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            transition: all 0.15s ease;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            z-index: 1;
+        }
+
+        .settings-close-btn svg {
+            width: 16px;
+            height: 16px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 2.5;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .settings-close-btn:hover {
+            background: rgba(220, 60, 50, 0.9);
+            color: #fff;
         }
 
         .settings-section {
@@ -421,18 +474,22 @@
             background: linear-gradient(160deg, rgba(46, 46, 52, 0.78), rgba(36, 36, 42, 0.68));
             backdrop-filter: blur(24px);
             -webkit-backdrop-filter: blur(24px);
-            border: 1px solid rgba(255,255,255,0.1);
+            border: none;
             border-radius: 12px;
             min-width: 180px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1);
             z-index: 2147483647;
-            pointer-events: auto;
-            display: none;
+            pointer-events: none;
             padding: 6px 0;
+            opacity: 0;
+            transform: scale(0.97);
+            transition: opacity 0.15s ease-out, transform 0.15s ease-out;
         }
 
         .context-menu.visible {
-            display: block;
+            opacity: 1;
+            transform: scale(1);
+            pointer-events: auto;
         }
 
         .context-menu-item {
@@ -482,12 +539,14 @@
             backdrop-filter: blur(2px);
             -webkit-backdrop-filter: blur(2px);
             z-index: 2147483646;
-            pointer-events: auto;
-            display: none;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s ease-out;
         }
 
         .modal-overlay.visible {
-            display: block;
+            opacity: 1;
+            pointer-events: auto;
         }
 
         .hotkey-info {
@@ -553,11 +612,11 @@
             position: fixed;
             top: 50%;
             left: 50%;
-            transform: translate(-50%, -50%);
+            transform: translate(-50%, -50%) scale(0.96);
             background: linear-gradient(160deg, rgba(46, 46, 52, 0.78), rgba(36, 36, 42, 0.68));
             backdrop-filter: blur(28px);
             -webkit-backdrop-filter: blur(28px);
-            border: 1px solid rgba(255,255,255,0.1);
+            border: none;
             border-radius: 16px;
             padding: 32px;
             width: 480px;
@@ -569,10 +628,21 @@
             pointer-events: auto;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             color: #fff;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+        }
+
+        .tutorial-modal.visible {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+            pointer-events: auto;
         }
 
         .tutorial-modal.hidden {
-            display: none;
+            opacity: 0;
+            transform: translate(-50%, -50%) scale(0.96);
+            pointer-events: none;
         }
 
         .tutorial-step {
@@ -737,10 +807,7 @@
     strip.className = 'strip';
     strip.innerHTML = `
         <button class="btn" id="btn-pin" title="Always on Top (${formatKey('Alt+Shift+T')})">${icons.pin}</button>
-        <div class="recent-container">
-            <button class="btn" id="btn-recent" title="Recent URLs">${icons.recent}</button>
-            <div class="recent-dropdown" id="recent-dropdown"></div>
-        </div>
+        <button class="btn" id="btn-recent" title="Recent URLs">${icons.recent}</button>
         <button class="btn" id="btn-home" title="Go Home">${icons.home}</button>
         <input type="text" class="url-display" id="url-input" placeholder="Enter URL to load...">
         <button class="btn" id="btn-lock" title="Click-through mode (${formatKey('Alt+Shift+D')})">${icons.lock}</button>
@@ -752,6 +819,11 @@
     `;
     shadow.appendChild(strip);
 
+    const recentDropdown = document.createElement('div');
+    recentDropdown.className = 'recent-dropdown';
+    recentDropdown.id = 'recent-dropdown';
+    shadow.appendChild(recentDropdown);
+
     const modalOverlay = document.createElement('div');
     modalOverlay.className = 'modal-overlay';
     shadow.appendChild(modalOverlay);
@@ -759,6 +831,8 @@
     const settingsModal = document.createElement('div');
     settingsModal.className = 'settings-modal hidden';
     settingsModal.innerHTML = `
+        <button class="settings-close-btn" id="btn-close-settings-x" title="Close">${icons.close}</button>
+        <div class="settings-scroll">
         <div class="settings-title">Settings</div>
 
         <div class="settings-section">
@@ -842,6 +916,7 @@
         <div class="settings-footer">
             <span class="settings-version" id="settings-version"></span>
             <button class="settings-btn" id="btn-close-settings">Close</button>
+        </div>
         </div>
     `;
     shadow.appendChild(settingsModal);
@@ -951,7 +1026,6 @@
 
     const btnPin = strip.querySelector('#btn-pin');
     const btnRecent = strip.querySelector('#btn-recent');
-    const recentDropdown = strip.querySelector('#recent-dropdown');
     const urlInput = strip.querySelector('#url-input');
     const btnLock = strip.querySelector('#btn-lock');
     const opacitySlider = strip.querySelector('#opacity-slider');
@@ -1078,17 +1152,24 @@
         }
     });
 
+    function positionDropdown() {
+        const rect = btnRecent.getBoundingClientRect();
+        recentDropdown.style.top = (rect.bottom + 8) + 'px';
+        recentDropdown.style.left = rect.left + 'px';
+    }
+
     btnRecent.addEventListener('click', (e) => {
         e.stopPropagation();
         const isVisible = recentDropdown.classList.contains('visible');
-        recentDropdown.classList.toggle('visible', !isVisible);
         if (!isVisible) {
             updateRecentDropdown();
+            positionDropdown();
         }
+        recentDropdown.classList.toggle('visible', !isVisible);
     });
 
     document.addEventListener('click', (e) => {
-        if (!strip.contains(e.target)) {
+        if (!strip.contains(e.target) && !recentDropdown.contains(e.target)) {
             recentDropdown.classList.remove('visible');
         }
     });
@@ -1168,9 +1249,12 @@
         return Math.round(10 + t * 90);
     }
 
-    opacitySlider.addEventListener('input', async (e) => {
+    let _opacityThrottle = null;
+    opacitySlider.addEventListener('input', (e) => {
+        if (_opacityThrottle) return;
+        _opacityThrottle = setTimeout(() => { _opacityThrottle = null; }, 32);
         const opacity = sliderToOpacity(parseInt(e.target.value, 10));
-        await invoke('set_opacity_live', { opacity });
+        invoke('set_opacity_live', { opacity });
     });
 
     opacitySlider.addEventListener('change', async (e) => {
@@ -1249,10 +1333,12 @@
             settingHomeUrl.value = config.home_url || 'https://www.google.com';
         }
         settingsModal.classList.remove('hidden');
+        settingsModal.classList.add('visible');
         modalOverlay.classList.add('visible');
     }
 
     function closeSettings() {
+        settingsModal.classList.remove('visible');
         settingsModal.classList.add('hidden');
         modalOverlay.classList.remove('visible');
     }
@@ -1283,10 +1369,13 @@
         }
     });
 
-    settingOpacity.addEventListener('input', async (e) => {
+    let _settingOpacityThrottle = null;
+    settingOpacity.addEventListener('input', (e) => {
         const opacity = sliderToOpacity(parseInt(e.target.value, 10));
         settingOpacityValue.textContent = Math.round(opacity * 100);
-        await invoke('set_opacity_live', { opacity });
+        if (_settingOpacityThrottle) return;
+        _settingOpacityThrottle = setTimeout(() => { _settingOpacityThrottle = null; }, 32);
+        invoke('set_opacity_live', { opacity });
     });
 
     settingOpacity.addEventListener('change', async (e) => {
@@ -1303,6 +1392,7 @@
     });
 
     btnCloseSettings.addEventListener('click', closeSettings);
+    settingsModal.querySelector('#btn-close-settings-x').addEventListener('click', closeSettings);
     modalOverlay.addEventListener('click', () => {
         if (tutorialActive) {
             dismissTutorial();
@@ -1328,7 +1418,7 @@
     }
 
     strip.addEventListener('contextmenu', (e) => {
-        if (e.target.closest('.btn, .url-display, .opacity-slider, .recent-dropdown')) return;
+        if (e.target.closest('.btn, .url-display, .opacity-slider')) return;
         e.preventDefault();
         showContextMenu(e.clientX, e.clientY);
     });
@@ -1409,6 +1499,7 @@
     async function dismissTutorial() {
         if (!tutorialActive) return;
         tutorialActive = false;
+        tutorialModal.classList.remove('visible');
         tutorialModal.classList.add('hidden');
         modalOverlay.classList.remove('visible');
         if (config) {
@@ -1440,6 +1531,7 @@
     function showTutorial() {
         tutorialActive = true;
         tutorialModal.classList.remove('hidden');
+        tutorialModal.classList.add('visible');
         modalOverlay.classList.add('visible');
         _tutorialGoToStep(0);
     }
@@ -1596,15 +1688,17 @@
         }, 50);
     }
 
-    const observer = new MutationObserver((mutations) => {
-        for (const mutation of mutations) {
-            for (const node of mutation.removedNodes) {
-                if (node === container || container.contains(node)) {
-                    if (document.body) document.body.prepend(container);
-                    return;
-                }
+    let _observerPending = false;
+    const observer = new MutationObserver(() => {
+        if (_observerPending) return;
+        if (!document.body || document.body.contains(container)) return;
+        _observerPending = true;
+        Promise.resolve().then(() => {
+            _observerPending = false;
+            if (document.body && !document.body.contains(container)) {
+                document.body.prepend(container);
             }
-        }
+        });
     });
 
     // Aggressive init: poll with setInterval instead of waiting for DOMContentLoaded.
