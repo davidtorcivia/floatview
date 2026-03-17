@@ -67,8 +67,8 @@
         .strip {
             position: fixed;
             top: ${DRAG_BAR_HEIGHT}px;
-            left: 0;
-            right: 0;
+            left: 20px;
+            right: 20px;
             height: ${STRIP_HEIGHT}px;
             background: rgba(30, 41, 59, 0.6);
             backdrop-filter: blur(16px);
@@ -80,18 +80,22 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             font-size: 13px;
             color: #fff;
-            transform: translateY(-${STRIP_HEIGHT + DRAG_BAR_HEIGHT}px);
-            transition: transform 0.12s ease-out;
+            transform: translateY(-${STRIP_HEIGHT + DRAG_BAR_HEIGHT + 20}px) scale(0.96);
+            transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.15s ease-out;
+            opacity: 0;
             pointer-events: auto;
             user-select: none;
             -webkit-app-region: no-drag;
-            border-bottom: 1px solid rgba(255,255,255,0.08);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.5);
             z-index: 2147483647;
         }
 
         .strip.visible {
-            transform: translateY(0);
+            transform: translateY(0) scale(1);
+            opacity: 1;
+            transition: transform 0.3s cubic-bezier(0.22, 0.9, 0.36, 1.12), opacity 0.2s ease-out;
         }
 
         .btn {
@@ -102,11 +106,12 @@
             min-width: 36px;
             height: 36px;
             padding: 0;
-            border-radius: 6px;
+            border-radius: 10px;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
+            line-height: 0;
             transition: all 0.1s;
         }
 
@@ -126,8 +131,8 @@
         }
 
         .btn.active {
-            background: rgba(66, 133, 244, 0.5);
-            color: #fff;
+            background: rgba(200, 140, 80, 0.4);
+            color: #e8b87a;
         }
 
         .btn:active {
@@ -138,20 +143,21 @@
             -webkit-app-region: no-drag;
             flex: 1;
             min-width: 0;
-            min-height: 36px;
+            height: 36px;
             background: rgba(255,255,255,0.08);
             border: 1px solid rgba(255,255,255,0.1);
             color: #fff;
             padding: 0 14px;
-            border-radius: 6px;
+            border-radius: 10px;
             font-size: 13px;
             font-family: inherit;
+            line-height: 36px;
             outline: none;
         }
 
         .url-display:focus {
             background: rgba(255,255,255,0.12);
-            border-color: rgba(66, 133, 244, 0.5);
+            border-color: rgba(200, 140, 80, 0.5);
         }
 
         .url-display::placeholder {
@@ -160,7 +166,7 @@
 
         .opacity-slider {
             -webkit-app-region: no-drag;
-            width: 80px;
+            width: 120px;
             height: 36px;
             padding: 0 4px;
             -webkit-appearance: none;
@@ -327,7 +333,7 @@
         }
 
         .toggle-switch.active {
-            background: rgba(66, 133, 244, 0.8);
+            background: rgba(200, 140, 80, 0.7);
         }
 
         .toggle-switch::after {
@@ -515,7 +521,7 @@
         }
 
         .update-status.available {
-            color: rgba(66, 133, 244, 0.9);
+            color: rgba(200, 140, 80, 0.9);
         }
 
         .update-status.error {
@@ -655,12 +661,12 @@
         }
 
         .tutorial-btn.primary {
-            background: rgba(66, 133, 244, 0.6);
-            border-color: rgba(66, 133, 244, 0.8);
+            background: rgba(200, 140, 80, 0.5);
+            border-color: rgba(200, 140, 80, 0.7);
         }
 
         .tutorial-btn.primary:hover {
-            background: rgba(66, 133, 244, 0.8);
+            background: rgba(200, 140, 80, 0.7);
         }
 
         .tutorial-skip {
@@ -694,7 +700,7 @@
         }
 
         .tutorial-dot.active {
-            background: rgba(66, 133, 244, 0.8);
+            background: rgba(200, 140, 80, 0.7);
         }
     `;
     shadow.appendChild(style);
@@ -710,8 +716,8 @@
 
     // SVG icons
     const icons = {
-        pin: `<svg viewBox="0 0 24 24"><path d="M12 2L12 8M12 8L8 12M12 8L16 12M8 12L4 16L8 20L12 16L16 20L20 16L16 12L12 16L8 12" stroke-linejoin="round"/></svg>`,
-        pinActive: `<svg viewBox="0 0 24 24"><path d="M12 2L12 8M12 8L8 12M12 8L16 12M8 12L4 16L8 20L12 16L16 20L20 16L16 12L12 16L8 12" fill="currentColor" stroke-linejoin="round"/></svg>`,
+        pin: `<svg viewBox="0 0 24 24"><path d="M9 4v6l-2 4v2h5v6l1 1 1-1v-6h5v-2l-2-4V4"/><line x1="8" y1="4" x2="16" y2="4"/></svg>`,
+        pinActive: `<svg viewBox="0 0 24 24"><path d="M9 4v6l-2 4v2h5v6l1 1 1-1v-6h5v-2l-2-4V4" fill="currentColor"/><line x1="8" y1="4" x2="16" y2="4"/></svg>`,
         recent: `<svg viewBox="0 0 24 24"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>`,
         lock: `<svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>`,
         lockActive: `<svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" fill="currentColor"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>`,
@@ -1146,13 +1152,22 @@
         }
     });
 
+    function sliderToOpacity(val) {
+        const t = val / 100;
+        return Math.max(0.1, t * t);
+    }
+
+    function opacityToSlider(opacity) {
+        return Math.round(Math.sqrt(Math.max(0.1, opacity)) * 100);
+    }
+
     opacitySlider.addEventListener('input', async (e) => {
-        const opacity = parseInt(e.target.value, 10) / 100;
+        const opacity = sliderToOpacity(parseInt(e.target.value, 10));
         await invoke('set_opacity_live', { opacity });
     });
 
     opacitySlider.addEventListener('change', async (e) => {
-        const opacity = parseInt(e.target.value, 10) / 100;
+        const opacity = sliderToOpacity(parseInt(e.target.value, 10));
         await invoke('set_opacity', { opacity });
     });
 
@@ -1209,7 +1224,7 @@
         if (config) {
             settingOntop.classList.toggle('active', config.window.always_on_top);
             settingLocked.classList.toggle('active', config.window.locked);
-            settingOpacity.value = Math.round(config.window.opacity * 100);
+            settingOpacity.value = opacityToSlider(config.window.opacity);
             settingOpacityValue.textContent = Math.round(config.window.opacity * 100);
             if (config.hotkeys) {
                 hotkeyOntop.textContent = formatKey(config.hotkeys.toggle_on_top || 'Alt+Shift+T');
@@ -1262,13 +1277,13 @@
     });
 
     settingOpacity.addEventListener('input', async (e) => {
-        const opacity = parseInt(e.target.value, 10) / 100;
-        settingOpacityValue.textContent = e.target.value;
+        const opacity = sliderToOpacity(parseInt(e.target.value, 10));
+        settingOpacityValue.textContent = Math.round(opacity * 100);
         await invoke('set_opacity_live', { opacity });
     });
 
     settingOpacity.addEventListener('change', async (e) => {
-        const opacity = parseInt(e.target.value, 10) / 100;
+        const opacity = sliderToOpacity(parseInt(e.target.value, 10));
         await invoke('set_opacity', { opacity });
     });
 
@@ -1438,7 +1453,7 @@
                 btnPin.classList.toggle('active', config.window.always_on_top);
                 updateLockIcon(config.window.locked);
                 btnLock.classList.toggle('active', config.window.locked);
-                opacitySlider.value = Math.round(config.window.opacity * 100);
+                opacitySlider.value = opacityToSlider(config.window.opacity);
                 updateRecentDropdown();
                 if (config.window.locked) {
                     hideStrip();
@@ -1497,7 +1512,7 @@
                 if (config) config.window.locked = value;
                 break;
             case 'opacity':
-                opacitySlider.value = Math.round(value * 100);
+                opacitySlider.value = opacityToSlider(value);
                 if (config) config.window.opacity = value;
                 break;
             case 'open_settings':
@@ -1518,7 +1533,7 @@
         const listen = window.__TAURI__.event.listen;
 
         listen('opacity-changed', (event) => {
-            opacitySlider.value = Math.round(event.payload * 100);
+            opacitySlider.value = opacityToSlider(event.payload);
             if (config) {
                 config.window.opacity = event.payload;
             }
