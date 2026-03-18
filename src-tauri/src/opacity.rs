@@ -12,15 +12,22 @@ pub fn set_window_opacity<R: Runtime>(window: &WebviewWindow<R>, opacity: f64) {
         unsafe {
             let hwnd = HWND(hwnd_value.0);
             let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-            if ex_style & WS_EX_LAYERED.0 as isize == 0 {
-                SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex_style | WS_EX_LAYERED.0 as isize);
+            if opacity >= 1.0 {
+                // Fully opaque: remove layered flag for clean rendering
+                if ex_style & WS_EX_LAYERED.0 as isize != 0 {
+                    SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex_style & !(WS_EX_LAYERED.0 as isize));
+                }
+            } else {
+                if ex_style & WS_EX_LAYERED.0 as isize == 0 {
+                    SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex_style | WS_EX_LAYERED.0 as isize);
+                }
+                let _ = SetLayeredWindowAttributes(
+                    hwnd,
+                    windows::Win32::Foundation::COLORREF(0),
+                    (opacity * 255.0) as u8,
+                    LAYERED_WINDOW_ATTRIBUTES_FLAGS(2),
+                );
             }
-            let _ = SetLayeredWindowAttributes(
-                hwnd,
-                windows::Win32::Foundation::COLORREF(0),
-                (opacity * 255.0) as u8,
-                LAYERED_WINDOW_ATTRIBUTES_FLAGS(2),
-            );
         }
     }
 }

@@ -11,6 +11,7 @@
     const HIDE_DELAY = 300;
     const IS_MAC = navigator.platform.includes('Mac');
     const COMMAND_TOKEN = '__FLOATVIEW_COMMAND_TOKEN__';
+    const EMBEDDED_HOME_URL = '__FLOATVIEW_HOME_URL__';
 
     function formatKey(shortcut) {
         if (!IS_MAC) return shortcut;
@@ -1317,7 +1318,7 @@
             item.textContent = url;
             item.addEventListener('click', async () => {
                 if (url && !item.classList.contains('current')) {
-                    await invoke('navigate', { url });
+                    await navigateToUrl(url);
                 }
             });
             recentDropdown.appendChild(item);
@@ -1477,6 +1478,14 @@
         }
     });
 
+    async function navigateToUrl(url) {
+        const result = await invoke('navigate', { url });
+        if (result === null) {
+            // IPC failed (e.g., error page), navigate directly
+            window.location.href = url;
+        }
+    }
+
     urlInput.addEventListener('keydown', async (e) => {
         if (e.key === 'Enter') {
             let url = urlInput.value.trim();
@@ -1484,13 +1493,15 @@
                 url = 'https://' + url;
             }
             if (url) {
-                await invoke('navigate', { url });
+                await navigateToUrl(url);
             }
         }
     });
 
     btnHome.addEventListener('click', async () => {
-        await invoke('navigate_home');
+        let homeUrl = config?.home_url || EMBEDDED_HOME_URL;
+        homeUrl = homeUrl || 'https://www.google.com';
+        window.location.href = homeUrl;
     });
 
     btnLock.addEventListener('click', async () => {
@@ -1864,7 +1875,8 @@
     function isErrorPage() {
         try {
             const text = (document.body?.innerText || '').substring(0, 2000);
-            return /ERR_(?:SSL_|CONNECTION_|NAME_NOT_RESOLVED|CERT_|TIMED_OUT|EMPTY_RESPONSE|FAILED|BLOCKED|TUNNEL_|NETWORK_|INTERNET_|ABORTED|ADDRESS_|INVALID)/.test(text);
+            return /ERR_(?:SSL_|CONNECTION_|NAME_NOT_RESOLVED|CERT_|TIMED_OUT|EMPTY_RESPONSE|FAILED|BLOCKED|TUNNEL_|NETWORK_|INTERNET_|ABORTED|ADDRESS_|INVALID)/.test(text)
+                || /can['']t reach this page|this site can['']t be reached|no internet/i.test(text);
         } catch { return false; }
     }
 

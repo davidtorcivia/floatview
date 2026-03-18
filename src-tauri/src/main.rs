@@ -145,8 +145,12 @@ fn get_config_path(app: &AppHandle) -> PathBuf {
     app_dir.join("config.json")
 }
 
-fn build_injection_script(command_token: &str) -> String {
-    INJECTION_SCRIPT.replace(COMMAND_TOKEN_PLACEHOLDER, command_token)
+const HOME_URL_PLACEHOLDER: &str = "__FLOATVIEW_HOME_URL__";
+
+fn build_injection_script(command_token: &str, home_url: &str) -> String {
+    INJECTION_SCRIPT
+        .replace(COMMAND_TOKEN_PLACEHOLDER, command_token)
+        .replace(HOME_URL_PLACEHOLDER, home_url)
 }
 
 fn authorize_command(
@@ -366,7 +370,7 @@ async fn set_opacity(
     token: String,
 ) -> Result<(), String> {
     authorize_command(&state, &token, "set_opacity")?;
-    let opacity = opacity.clamp(0.1, 1.0);
+    let opacity = if opacity > 0.99 { 1.0 } else { opacity.clamp(0.1, 1.0) };
     opacity::set_window_opacity(&window, opacity);
 
     let mut config = state.config.lock().map_err(|e| e.to_string())?;
@@ -388,7 +392,7 @@ async fn set_opacity_live(
     token: String,
 ) -> Result<(), String> {
     authorize_command(&state, &token, "set_opacity_live")?;
-    let opacity = opacity.clamp(0.1, 1.0);
+    let opacity = if opacity > 0.99 { 1.0 } else { opacity.clamp(0.1, 1.0) };
     opacity::set_window_opacity(&window, opacity);
     Ok(())
 }
@@ -1255,7 +1259,7 @@ fn run() {
             let config = load_config(&config_path);
             info!(path = %config_path.display(), "Configuration loaded");
             let command_token = Uuid::new_v4().to_string();
-            let injection_script = build_injection_script(&command_token);
+            let injection_script = build_injection_script(&command_token, &config.home_url);
 
             let state = AppState {
                 config: Mutex::new(config.clone()),
