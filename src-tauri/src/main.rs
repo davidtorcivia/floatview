@@ -514,6 +514,55 @@ async fn save_window_geometry(
 }
 
 #[tauri::command]
+async fn snap_window(
+    window: WebviewWindow,
+    state: tauri::State<'_, AppState>,
+    position: String,
+    token: String,
+) -> Result<(), String> {
+    authorize_command(&state, &token, "snap_window")?;
+
+    let monitor = window
+        .current_monitor()
+        .map_err(|e| e.to_string())?
+        .or(window.primary_monitor().map_err(|e| e.to_string())?)
+        .ok_or("No monitor found")?;
+
+    let scale = window.scale_factor().map_err(|e| e.to_string())?;
+    let mon_pos = monitor.position();
+    let mon_size = monitor.size();
+    let win_size = window.outer_size().map_err(|e| e.to_string())?;
+
+    let padding = (16.0 * scale) as i32;
+    let mx = mon_pos.x;
+    let my = mon_pos.y;
+    let mw = mon_size.width as i32;
+    let mh = mon_size.height as i32;
+    let ww = win_size.width as i32;
+    let wh = win_size.height as i32;
+
+    let (x, y) = match position.as_str() {
+        "top-left" => (mx + padding, my + padding),
+        "top-right" => (mx + mw - ww - padding, my + padding),
+        "bottom-left" => (mx + padding, my + mh - wh - padding),
+        "bottom-right" => (mx + mw - ww - padding, my + mh - wh - padding),
+        "center" => (mx + (mw - ww) / 2, my + (mh - wh) / 2),
+        _ => return Err("Invalid snap position".to_string()),
+    };
+
+    if window.is_maximized().unwrap_or(false) {
+        window.unmaximize().map_err(|e| e.to_string())?;
+    }
+
+    window
+        .set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }))
+        .map_err(|e| e.to_string())?;
+
+    persist_window_geometry(&window, &state)?;
+    Ok(())
+}
+
+#[tauri::command]
 async fn open_settings(
     window: WebviewWindow,
     state: tauri::State<'_, AppState>,
@@ -1266,6 +1315,7 @@ fn run() {
             toggle_locked,
             set_url,
             save_window_geometry,
+            snap_window,
             open_settings,
             exit_click_through,
             minimize_window,

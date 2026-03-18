@@ -66,6 +66,8 @@ pub struct AppConfig {
     pub home_url: String,
     #[serde(default = "default_true")]
     pub first_run: bool,
+    #[serde(default)]
+    pub auto_refresh_minutes: u32,
 }
 
 fn default_home_url() -> String {
@@ -87,6 +89,7 @@ impl Default for AppConfig {
             hotkeys: HotkeyConfig::default(),
             home_url: default_home_url(),
             first_run: true,
+            auto_refresh_minutes: 0,
         }
     }
 }

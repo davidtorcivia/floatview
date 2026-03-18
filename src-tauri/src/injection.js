@@ -272,11 +272,10 @@
             overflow: visible;
             box-shadow: 0 20px 60px rgba(0,0,0,0.18), 0 4px 12px rgba(0,0,0,0.1);
             z-index: 2147483647;
-            pointer-events: auto;
+            pointer-events: none;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             color: #fff;
             opacity: 0;
-            pointer-events: none;
             transition: opacity 0.2s ease-out, transform 0.2s ease-out;
         }
 
@@ -289,7 +288,6 @@
         .settings-modal.hidden {
             opacity: 0;
             transform: translate(-50%, -50%) scale(0.96);
-            pointer-events: none;
         }
 
         .settings-scroll {
@@ -625,11 +623,10 @@
             overflow-y: auto;
             box-shadow: 0 20px 60px rgba(0,0,0,0.18), 0 4px 12px rgba(0,0,0,0.1);
             z-index: 2147483647;
-            pointer-events: auto;
+            pointer-events: none;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             color: #fff;
             opacity: 0;
-            pointer-events: none;
             transition: opacity 0.2s ease-out, transform 0.2s ease-out;
         }
 
@@ -642,7 +639,6 @@
         .tutorial-modal.hidden {
             opacity: 0;
             transform: translate(-50%, -50%) scale(0.96);
-            pointer-events: none;
         }
 
         .tutorial-step {
@@ -778,6 +774,108 @@
         .tutorial-dot.active {
             background: rgba(200, 140, 80, 0.7);
         }
+
+        .snap-popup {
+            position: fixed;
+            top: 0;
+            left: 0;
+            background: linear-gradient(160deg, rgba(46, 46, 52, 0.88), rgba(36, 36, 42, 0.82));
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: none;
+            border-radius: 12px;
+            padding: 8px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1);
+            z-index: 2147483647;
+            pointer-events: none;
+            opacity: 0;
+            transform: translateY(-4px) scale(0.97);
+            transition: opacity 0.18s ease-out, transform 0.18s ease-out;
+            display: grid;
+            grid-template-columns: repeat(3, 36px);
+            grid-template-rows: repeat(2, 28px);
+            gap: 4px;
+        }
+
+        .snap-popup.visible {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+            pointer-events: auto;
+        }
+
+        .snap-cell {
+            background: rgba(255,255,255,0.06);
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            color: rgba(255,255,255,0.5);
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.1s;
+            padding: 0;
+        }
+
+        .snap-cell:hover {
+            background: rgba(200, 140, 80, 0.3);
+            color: #fff;
+        }
+
+        .crop-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 2147483646;
+            cursor: crosshair;
+            pointer-events: auto;
+            background: rgba(0,0,0,0.3);
+        }
+
+        .crop-selection {
+            position: absolute;
+            border: 2px dashed rgba(200, 140, 80, 0.9);
+            background: rgba(200, 140, 80, 0.08);
+            pointer-events: none;
+            border-radius: 4px;
+        }
+
+        .crop-instructions {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(36, 36, 42, 0.9);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            color: rgba(255,255,255,0.8);
+            padding: 10px 20px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+
+        .settings-select {
+            -webkit-app-region: no-drag;
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: #fff;
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-family: inherit;
+            outline: none;
+            cursor: pointer;
+        }
+
+        .settings-select option {
+            background: #2e2e34;
+            color: #fff;
+        }
     `;
     shadow.appendChild(style);
 
@@ -801,6 +899,9 @@
         minimize: `<svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
         close: `<svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
         home: `<svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`,
+        snap: `<svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`,
+        refresh: `<svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>`,
+        crop: `<svg viewBox="0 0 24 24"><path d="M6.13 1L6 16a2 2 0 002 2h15"/><path d="M1 6.13L16 6a2 2 0 012 2v15"/></svg>`,
     };
 
     const strip = document.createElement('div');
@@ -811,6 +912,8 @@
         <button class="btn" id="btn-home" title="Go Home">${icons.home}</button>
         <input type="text" class="url-display" id="url-input" placeholder="Enter URL to load...">
         <button class="btn" id="btn-lock" title="Click-through mode (${formatKey('Alt+Shift+D')})">${icons.lock}</button>
+        <button class="btn" id="btn-snap" title="Snap to corner">${icons.snap}</button>
+        <button class="btn" id="btn-crop" title="Crop/Zoom region">${icons.crop}</button>
         <div class="divider"></div>
         <input type="range" class="opacity-slider" id="opacity-slider" min="10" max="100" value="100" title="Opacity">
         <button class="btn" id="btn-settings" title="Settings">${icons.settings}</button>
@@ -823,6 +926,17 @@
     recentDropdown.className = 'recent-dropdown';
     recentDropdown.id = 'recent-dropdown';
     shadow.appendChild(recentDropdown);
+
+    const snapPopup = document.createElement('div');
+    snapPopup.className = 'snap-popup';
+    snapPopup.innerHTML = `
+        <button class="snap-cell" data-pos="top-left" title="Top Left">&#8598;</button>
+        <button class="snap-cell" data-pos="center" title="Center">&#9678;</button>
+        <button class="snap-cell" data-pos="top-right" title="Top Right">&#8599;</button>
+        <button class="snap-cell" data-pos="bottom-left" title="Bottom Left">&#8601;</button>
+        <button class="snap-cell" data-pos="bottom-right" title="Bottom Right" style="grid-column:3;">&#8600;</button>
+    `;
+    shadow.appendChild(snapPopup);
 
     const modalOverlay = document.createElement('div');
     modalOverlay.className = 'modal-overlay';
@@ -848,6 +962,19 @@
             <div class="settings-slider-row">
                 <div class="settings-label">Opacity: <span id="setting-opacity-value">100</span>%</div>
                 <input type="range" class="settings-slider" id="setting-opacity" min="10" max="100" value="100">
+            </div>
+            <div class="settings-row">
+                <span class="settings-label">Auto-Refresh</span>
+                <select class="settings-select" id="setting-auto-refresh">
+                    <option value="0">Off</option>
+                    <option value="1">1 min</option>
+                    <option value="2">2 min</option>
+                    <option value="5">5 min</option>
+                    <option value="10">10 min</option>
+                    <option value="15">15 min</option>
+                    <option value="30">30 min</option>
+                    <option value="60">1 hour</option>
+                </select>
             </div>
         </div>
 
@@ -1019,6 +1146,12 @@
         <div class="context-menu-item" id="ctx-ontop">${icons.pin}Toggle Always on Top</div>
         <div class="context-menu-item" id="ctx-locked">${icons.lock}Toggle Click-Through</div>
         <div class="context-menu-divider"></div>
+        <div class="context-menu-item" id="ctx-snap-tl">&#8598;&ensp;Snap Top Left</div>
+        <div class="context-menu-item" id="ctx-snap-tr">&#8599;&ensp;Snap Top Right</div>
+        <div class="context-menu-item" id="ctx-snap-bl">&#8601;&ensp;Snap Bottom Left</div>
+        <div class="context-menu-item" id="ctx-snap-br">&#8600;&ensp;Snap Bottom Right</div>
+        <div class="context-menu-item" id="ctx-snap-center">&#9678;&ensp;Snap Center</div>
+        <div class="context-menu-divider"></div>
         <div class="context-menu-item" id="ctx-minimize">${icons.minimize}Minimize</div>
         <div class="context-menu-item" id="ctx-close">${icons.close}Close</div>
     `;
@@ -1033,6 +1166,134 @@
     const btnHome = strip.querySelector('#btn-home');
     const btnMinimize = strip.querySelector('#btn-minimize');
     const btnClose = strip.querySelector('#btn-close');
+    const btnSnap = strip.querySelector('#btn-snap');
+    const btnCrop = strip.querySelector('#btn-crop');
+
+    // Auto-refresh timer
+    let autoRefreshTimer = null;
+    function startAutoRefresh(minutes) {
+        stopAutoRefresh();
+        if (!minutes || minutes <= 0) return;
+        autoRefreshTimer = setInterval(() => {
+            if (!settingsModal.classList.contains('hidden')) return;
+            if (urlInput === document.activeElement) return;
+            window.location.reload();
+        }, minutes * 60 * 1000);
+    }
+    function stopAutoRefresh() {
+        if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
+    }
+
+    // Crop/zoom state
+    let cropActive = false;
+    let cropOverlayEl = null;
+
+    function enterCropSelection() {
+        cropOverlayEl = document.createElement('div');
+        cropOverlayEl.className = 'crop-overlay';
+        const instructions = document.createElement('div');
+        instructions.className = 'crop-instructions';
+        instructions.textContent = 'Click and drag to select a region. Press Escape to cancel.';
+        cropOverlayEl.appendChild(instructions);
+        const sel = document.createElement('div');
+        sel.className = 'crop-selection';
+        sel.style.display = 'none';
+        cropOverlayEl.appendChild(sel);
+        let sx, sy, dragging = false;
+        cropOverlayEl.addEventListener('mousedown', (e) => {
+            sx = e.clientX; sy = e.clientY; dragging = true;
+            sel.style.display = 'block';
+            sel.style.left = sx + 'px'; sel.style.top = sy + 'px';
+            sel.style.width = '0'; sel.style.height = '0';
+        });
+        cropOverlayEl.addEventListener('mousemove', (e) => {
+            if (!dragging) return;
+            sel.style.left = Math.min(sx, e.clientX) + 'px';
+            sel.style.top = Math.min(sy, e.clientY) + 'px';
+            sel.style.width = Math.abs(e.clientX - sx) + 'px';
+            sel.style.height = Math.abs(e.clientY - sy) + 'px';
+        });
+        cropOverlayEl.addEventListener('mouseup', (e) => {
+            if (!dragging) return;
+            dragging = false;
+            const vw = window.innerWidth, vh = window.innerHeight;
+            const x = Math.min(sx, e.clientX) / vw;
+            const y = Math.min(sy, e.clientY) / vh;
+            const w = Math.abs(e.clientX - sx) / vw;
+            const h = Math.abs(e.clientY - sy) / vh;
+            exitCropSelection();
+            if (w < 0.05 || h < 0.05) return;
+            applyCrop(x, y, w, h, true);
+        });
+        cropOverlayEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') { exitCropSelection(); e.preventDefault(); }
+        });
+        cropOverlayEl.setAttribute('tabindex', '0');
+        shadow.appendChild(cropOverlayEl);
+        cropOverlayEl.focus();
+    }
+
+    function exitCropSelection() {
+        if (cropOverlayEl) { cropOverlayEl.remove(); cropOverlayEl = null; }
+    }
+
+    function applyCrop(x, y, w, h, animate) {
+        // Move our container out of body so it's not affected by the transform
+        if (container.parentNode === document.body) {
+            document.documentElement.appendChild(container);
+        }
+        const vw = window.innerWidth, vh = window.innerHeight;
+        const scale = Math.min(1/w, 1/h);
+        const tx = -x * vw * scale;
+        const ty = -y * vh * scale;
+        document.body.style.transformOrigin = '0 0';
+        document.body.style.overflow = 'hidden';
+        if (animate) {
+            document.body.style.transition = 'transform 0.4s cubic-bezier(0.22, 0.9, 0.36, 1.12)';
+            requestAnimationFrame(() => {
+                document.body.style.transform = 'translate(' + tx + 'px, ' + ty + 'px) scale(' + scale + ')';
+            });
+            setTimeout(() => { document.body.style.transition = ''; }, 450);
+        } else {
+            document.body.style.transform = 'translate(' + tx + 'px, ' + ty + 'px) scale(' + scale + ')';
+        }
+        cropActive = true;
+        btnCrop.classList.add('active');
+    }
+
+    function removeCrop() {
+        document.body.style.transition = 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)';
+        document.body.style.transform = '';
+        setTimeout(() => {
+            document.body.style.transition = '';
+            document.body.style.transformOrigin = '';
+            document.body.style.overflow = '';
+            if (container.parentNode !== document.body && document.body) {
+                document.body.prepend(container);
+            }
+        }, 320);
+        cropActive = false;
+        btnCrop.classList.remove('active');
+    }
+
+    window.addEventListener('resize', () => {
+        if (cropActive && config && config.crop) {
+            applyCrop(config.crop.x, config.crop.y, config.crop.width, config.crop.height);
+        }
+    });
+
+    function snapFlash() {
+        document.documentElement.style.transition = 'opacity 0.1s ease-out';
+        document.documentElement.style.opacity = '0.7';
+        setTimeout(() => {
+            document.documentElement.style.transition = 'opacity 0.2s ease-in';
+            document.documentElement.style.opacity = '1';
+            setTimeout(() => {
+                document.documentElement.style.transition = '';
+                document.documentElement.style.opacity = '';
+            }, 220);
+        }, 100);
+    }
 
     function updateRecentDropdown() {
         recentDropdown.replaceChildren();
@@ -1073,6 +1334,8 @@
     function hideStrip() {
         if (!stripVisible) return;
         stripVisible = false;
+        strip.style.transform = '';
+        strip.style.transition = '';
         strip.classList.remove('visible');
     }
 
@@ -1172,6 +1435,9 @@
         if (!strip.contains(e.target) && !recentDropdown.contains(e.target)) {
             recentDropdown.classList.remove('visible');
         }
+        if (!strip.contains(e.target) && !snapPopup.contains(e.target)) {
+            snapPopup.classList.remove('visible');
+        }
     });
 
     recentDropdown.addEventListener('click', (e) => {
@@ -1266,6 +1532,51 @@
         openSettings();
     });
 
+    // Snap popup
+    function positionSnapPopup() {
+        const rect = btnSnap.getBoundingClientRect();
+        snapPopup.style.top = (rect.bottom + 8) + 'px';
+        snapPopup.style.left = rect.left + 'px';
+    }
+
+    btnSnap.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isVisible = snapPopup.classList.contains('visible');
+        if (!isVisible) positionSnapPopup();
+        snapPopup.classList.toggle('visible', !isVisible);
+        recentDropdown.classList.remove('visible');
+    });
+
+    snapPopup.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const pos = e.target.dataset.pos;
+        if (pos) {
+            snapPopup.classList.remove('visible');
+            await invoke('snap_window', { position: pos });
+            snapFlash();
+        }
+    });
+
+    // Context menu snap items
+    ['tl', 'tr', 'bl', 'br', 'center'].forEach(id => {
+        const posMap = { tl: 'top-left', tr: 'top-right', bl: 'bottom-left', br: 'bottom-right', center: 'center' };
+        const el = contextMenu.querySelector('#ctx-snap-' + id);
+        if (el) el.addEventListener('click', async () => {
+            hideContextMenu();
+            await invoke('snap_window', { position: posMap[id] });
+            snapFlash();
+        });
+    });
+
+    // Crop button
+    btnCrop.addEventListener('click', () => {
+        if (cropActive) {
+            removeCrop();
+        } else {
+            enterCropSelection();
+        }
+    });
+
     const settingOntop = settingsModal.querySelector('#setting-ontop');
     const settingLocked = settingsModal.querySelector('#setting-locked');
     const settingOpacity = settingsModal.querySelector('#setting-opacity');
@@ -1331,6 +1642,7 @@
                 hotkeyPrevious.textContent = formatKey(config.hotkeys.media_previous || 'Alt+Shift+Left');
             }
             settingHomeUrl.value = config.home_url || 'https://www.google.com';
+            settingAutoRefresh.value = String(config.auto_refresh_minutes || 0);
         }
         settingsModal.classList.remove('hidden');
         settingsModal.classList.add('visible');
@@ -1381,6 +1693,15 @@
     settingOpacity.addEventListener('change', async (e) => {
         const opacity = sliderToOpacity(parseInt(e.target.value, 10));
         await invoke('set_opacity', { opacity });
+    });
+
+    const settingAutoRefresh = settingsModal.querySelector('#setting-auto-refresh');
+    settingAutoRefresh.addEventListener('change', async () => {
+        if (config) {
+            config.auto_refresh_minutes = parseInt(settingAutoRefresh.value, 10) || 0;
+            await invoke('update_config', { config });
+            startAutoRefresh(config.auto_refresh_minutes);
+        }
     });
 
     btnClearRecent.addEventListener('click', async () => {
@@ -1483,7 +1804,11 @@
             urlInput.select();
         }
         if (e.key === 'Escape') {
-            if (tutorialActive) {
+            if (cropOverlayEl) {
+                exitCropSelection();
+            } else if (cropActive) {
+                removeCrop();
+            } else if (tutorialActive) {
                 dismissTutorial();
             } else if (!settingsModal.classList.contains('hidden')) {
                 closeSettings();
@@ -1563,6 +1888,7 @@
                 if (config.first_run) {
                     showTutorial();
                 }
+                startAutoRefresh(config.auto_refresh_minutes || 0);
             }
         } catch (e) {
             console.warn('Failed to load config:', e);
@@ -1690,7 +2016,7 @@
 
     let _observerPending = false;
     const observer = new MutationObserver(() => {
-        if (_observerPending) return;
+        if (_observerPending || cropActive) return;
         if (!document.body || document.body.contains(container)) return;
         _observerPending = true;
         Promise.resolve().then(() => {

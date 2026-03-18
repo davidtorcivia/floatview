@@ -25,6 +25,8 @@
     "core:window:allow-maximize",
     "core:window:allow-unmaximize",
     "core:window:allow-scale-factor",
+    "core:window:allow-current-monitor",
+    "core:window:allow-primary-monitor",
     "global-shortcut:default",
     "global-shortcut:allow-is-registered",
     "global-shortcut:allow-register",
