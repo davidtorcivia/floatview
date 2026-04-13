@@ -35,13 +35,17 @@ Open **Settings** (gear icon in the control strip, or right-click the tray icon)
 Move your mouse to the **top edge** of the window. A dark control strip slides down with all your controls:
 
 ```
- [Pin] [Recent] [Home] [________URL bar________] [Lock] [Snap] [Crop] | [Opacity] [Settings] [-] [x]
+ [←] [→] [⟳] [Pin] [Recent] [Home] [________URL bar________] [★] [Lock] [Snap] [Crop] | [Opacity] [Settings] [-] [x]
 ```
 
+- **Back** -- Go back in history
+- **Forward** -- Go forward in history
+- **Refresh** -- Reload the current page
 - **Pin** -- Toggle always-on-top
 - **Recent** -- Dropdown of your recent URLs
 - **Home** -- Navigate to your configured home URL
-- **URL bar** -- Shows current URL, type a new one and press Enter to navigate
+- **URL bar** -- Shows current URL, type a new one and press Enter to navigate (non-URL input searches DuckDuckGo)
+- **Bookmark (★)** -- Bookmark/unbookmark the current page (right-click to open bookmarks list)
 - **Lock** -- Toggle click-through mode (clicks pass through the window)
 - **Snap** -- Snap the window to a screen corner or center
 - **Crop** -- Crop and zoom into a region of the page
@@ -96,17 +100,23 @@ Press `Alt+Shift+D` to make the window completely transparent to mouse clicks --
 - **Adjustable Opacity** -- 10% to 100% transparency via slider or hotkeys
 - **Click-Through Mode** -- Window becomes invisible to mouse input
 - **Configurable Home URL** -- Set your default page; navigate back with the Home button
+- **Smart URL Bar** -- Enter a URL to navigate, or type a search query to search DuckDuckGo
+- **Bookmarks** -- Save favorite pages; star icon toggles bookmark, right-click for list
+- **Navigation Controls** -- Back, forward, and refresh buttons in the control strip
 - **First-Run Tutorial** -- Interactive onboarding for new users
 - **Borderless & Resizable** -- Clean look with native resize handles
 - **HDR Support** -- Uses system webview for correct HDR rendering (unlike Electron)
 - **Shadow DOM Control Strip** -- Injected UI that never breaks the page you're viewing
 - **Persistent State** -- Remembers window position, size, opacity, and last URL across restarts
+- **Crash Recovery** -- Geometry auto-saved every 30 seconds; config backed up on write
 - **System Tray** -- Minimize to tray, quick controls via right-click menu
 - **Global Hotkeys** -- Control everything without switching focus
 - **Single Instance** -- Opening FloatView again brings the existing window to front
 - **Snap to Corners** -- Quickly position the window at any screen corner or center
 - **Crop/Zoom** -- Select and zoom into a region of the page for focused viewing
 - **Auto-Refresh** -- Automatically reload the page on a configurable interval (1 min to 1 hour)
+- **Window Title** -- Title bar updates to match the current page
+- **Clear Site Data** -- Clear cookies, localStorage, and sessionStorage from settings
 - **In-App Updates** -- Check from Settings, install from tray menu
 - **Cross-Platform** -- Windows and macOS
 - **Tiny Footprint** -- ~3MB binary, uses system webview
@@ -136,6 +146,7 @@ You can edit the file directly to customize hotkeys or other settings:
   "home_url": "https://www.google.com",
   "first_run": false,
   "auto_refresh_minutes": 0,
+  "bookmarks": [],
   "hotkeys": {
     "toggle_on_top": "Alt+Shift+T",
     "toggle_locked": "Alt+Shift+D",
@@ -186,7 +197,7 @@ src/index.html              -- Landing page (URL input)
 src-tauri/src/main.rs       -- Rust backend (commands, hotkeys, tray, platform interop)
 src-tauri/src/config.rs     -- Config types with serde
 src-tauri/src/opacity.rs    -- Cross-platform opacity management
-src-tauri/src/injection.js  -- Shadow DOM control strip + tutorial (~1900 lines)
+src-tauri/src/injection.js  -- Shadow DOM control strip + tutorial (~2300 lines)
 ```
 
 ### Why not Electron?
@@ -207,7 +218,6 @@ Configuration files are stored separately and not removed by default:
 
 - **Click-through mode is invisible** -- The control strip hides; use hotkey or tray to exit
 - **Always-on-top vs fullscreen** -- Cannot overlay exclusive fullscreen games/apps
-- **No audio device routing** -- WebView's `setSinkId()` requires HTTPS origins
 - **macOS** -- Some global hotkey combinations may conflict with system shortcuts
 
 ## Privacy

@@ -59,8 +59,6 @@ pub struct AppConfig {
     pub window: WindowConfig,
     pub last_url: Option<String>,
     pub recent_urls: Option<Vec<String>>,
-    pub audio_device_id: Option<String>,
-    pub launch_at_startup: bool,
     pub hotkeys: HotkeyConfig,
     #[serde(default = "default_home_url")]
     pub home_url: String,
@@ -68,6 +66,8 @@ pub struct AppConfig {
     pub first_run: bool,
     #[serde(default)]
     pub auto_refresh_minutes: u32,
+    #[serde(default)]
+    pub bookmarks: Vec<String>,
 }
 
 fn default_home_url() -> String {
@@ -84,12 +84,11 @@ impl Default for AppConfig {
             window: WindowConfig::default(),
             last_url: None,
             recent_urls: Some(Vec::new()),
-            audio_device_id: None,
-            launch_at_startup: false,
             hotkeys: HotkeyConfig::default(),
             home_url: default_home_url(),
             first_run: true,
             auto_refresh_minutes: 0,
+            bookmarks: Vec::new(),
         }
     }
 }

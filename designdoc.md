@@ -1,4 +1,4 @@
-# FloatView — Technical Design Document (v3)
+# FloatView — Technical Design Document (v3, updated for v1.1.0)
 
 ## Overview
 
@@ -196,7 +196,8 @@ The ideal path is the web-standard `setSinkId()` API on `HTMLMediaElement`. Chro
 - Minimize to tray
 - Quick access: toggle always-on-top, opacity, locked/unlocked mode
 - Recent URLs
-- Launch at startup option
+- Clear bookmarks
+- Clear site data
 
 ### 7. Global Hotkeys
 
@@ -222,18 +223,18 @@ The injected control strip is `position: fixed` at the top of the viewport. It d
 On hover (with ~500ms dwell during video playback to prevent accidental triggers), the strip expands to ~40px and reveals controls:
 
 ```
-┌──────────────────────────────────────────────┐
-│ 📌 192.168.1.XXX:8096/web/...    🔓 ⚙ — ✕   │  ← injected Shadow DOM strip
-├──────────────────────────────────────────────┤
-│                                              │
-│        (page content: Emby etc)              │
-│                                              │
-└──────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│ ← → ⟳ ★  [URL bar - DDG search fallback]  📌 🔒 ⚙ — ✕ │  ← injected Shadow DOM strip
+├──────────────────────────────────────────────────────────┤
+│                                                          │
+│              (page content: Emby etc)                    │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
 ```
 
-Controls: always-on-top pin, URL display (click to edit), lock toggle, settings gear (audio, preferences), minimize, close.
+Controls: back, forward, refresh, bookmark star (click to toggle, right-click for dropdown list), always-on-top pin, URL display (click to edit, non-URL input searches DuckDuckGo), lock toggle, settings gear (audio, preferences, clear site data, clear bookmarks), minimize, close.
 
-Communication: injected JS calls `window.__TAURI__.invoke('command_name', { args })` to talk to the Rust backend. Tauri commands handle window manipulation, config persistence, audio device enumeration, etc.
+Communication: injected JS calls `window.__TAURI__.invoke('command_name', { args })` to talk to the Rust backend. Tauri commands handle window manipulation, config persistence, bookmark management, title updates, site data clearing, etc.
 
 ### Locked/Unlocked State Model (Click-Through)
 
@@ -300,17 +301,24 @@ Unsigned Windows binaries trigger SmartScreen warnings and may face friction in 
   },
   "last_url": "http://192.168.1.XXX:8096",
   "recent_urls": [],
-  "audio_device_id": null,
-  "launch_at_startup": false,
+  "bookmarks": [],
+  "home_url": "https://www.google.com",
+  "first_run": true,
+  "auto_refresh_minutes": 0,
   "hotkeys": {
     "toggle_on_top": "Alt+Shift+T",
     "toggle_locked": "Alt+Shift+D",
     "opacity_up": "Alt+Shift+Up",
     "opacity_down": "Alt+Shift+Down",
-    "toggle_visibility": "Alt+Shift+H"
+    "toggle_visibility": "Alt+Shift+H",
+    "media_play_pause": "Alt+Shift+Space",
+    "media_next": "Alt+Shift+Right",
+    "media_previous": "Alt+Shift+Left"
   }
 }
 ```
+
+Config is backed up to `config.json.bak` before each write. Window geometry is auto-saved every 30 seconds (skipping minimized/maximized states) via a background thread to prevent geometry loss on crash.
 
 ## Development Phases
 

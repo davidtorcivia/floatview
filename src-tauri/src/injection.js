@@ -903,15 +903,23 @@
         snap: `<svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`,
         refresh: `<svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>`,
         crop: `<svg viewBox="0 0 24 24"><path d="M6.13 1L6 16a2 2 0 002 2h15"/><path d="M1 6.13L16 6a2 2 0 012 2v15"/></svg>`,
+        back: `<svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>`,
+        forward: `<svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>`,
+        bookmark: `<svg viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>`,
+        bookmarkActive: `<svg viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z" fill="currentColor"/></svg>`,
     };
 
     const strip = document.createElement('div');
     strip.className = 'strip';
     strip.innerHTML = `
+        <button class="btn" id="btn-back" title="Go Back">${icons.back}</button>
+        <button class="btn" id="btn-forward" title="Go Forward">${icons.forward}</button>
+        <button class="btn" id="btn-refresh" title="Refresh Page">${icons.refresh}</button>
         <button class="btn" id="btn-pin" title="Always on Top (${formatKey('Alt+Shift+T')})">${icons.pin}</button>
         <button class="btn" id="btn-recent" title="Recent URLs">${icons.recent}</button>
         <button class="btn" id="btn-home" title="Go Home">${icons.home}</button>
-        <input type="text" class="url-display" id="url-input" placeholder="Enter URL to load...">
+        <input type="text" class="url-display" id="url-input" placeholder="Enter URL or search...">
+        <button class="btn" id="btn-bookmark" title="Bookmark this page">${icons.bookmark}</button>
         <button class="btn" id="btn-lock" title="Click-through mode (${formatKey('Alt+Shift+D')})">${icons.lock}</button>
         <button class="btn" id="btn-snap" title="Snap to corner">${icons.snap}</button>
         <button class="btn" id="btn-crop" title="Crop/Zoom region">${icons.crop}</button>
@@ -927,6 +935,11 @@
     recentDropdown.className = 'recent-dropdown';
     recentDropdown.id = 'recent-dropdown';
     shadow.appendChild(recentDropdown);
+
+    const bookmarksDropdown = document.createElement('div');
+    bookmarksDropdown.className = 'recent-dropdown';
+    bookmarksDropdown.id = 'bookmarks-dropdown';
+    shadow.appendChild(bookmarksDropdown);
 
     const snapPopup = document.createElement('div');
     snapPopup.className = 'snap-popup';
@@ -1024,6 +1037,14 @@
             <div class="settings-row">
                 <span class="settings-label">Clear Recent URLs</span>
                 <button class="settings-btn danger" id="btn-clear-recent">Clear</button>
+            </div>
+            <div class="settings-row">
+                <span class="settings-label">Clear Bookmarks</span>
+                <button class="settings-btn danger" id="btn-clear-bookmarks">Clear</button>
+            </div>
+            <div class="settings-row">
+                <span class="settings-label">Clear Site Data</span>
+                <button class="settings-btn danger" id="btn-clear-site-data">Clear</button>
             </div>
         </div>
 
@@ -1158,9 +1179,13 @@
     `;
     shadow.appendChild(contextMenu);
 
+    const btnBack = strip.querySelector('#btn-back');
+    const btnForward = strip.querySelector('#btn-forward');
+    const btnRefresh = strip.querySelector('#btn-refresh');
     const btnPin = strip.querySelector('#btn-pin');
     const btnRecent = strip.querySelector('#btn-recent');
     const urlInput = strip.querySelector('#url-input');
+    const btnBookmark = strip.querySelector('#btn-bookmark');
     const btnLock = strip.querySelector('#btn-lock');
     const opacitySlider = strip.querySelector('#opacity-slider');
     const btnSettings = strip.querySelector('#btn-settings');
@@ -1346,7 +1371,8 @@
             hideTimer = null;
             if (tutorialActive ||
                 !settingsModal.classList.contains('hidden') ||
-                recentDropdown.classList.contains('visible')) {
+                recentDropdown.classList.contains('visible') ||
+                bookmarksDropdown.classList.contains('visible')) {
                 return;
             }
             hideStrip();
@@ -1402,7 +1428,8 @@
         }
         // Don't hide if modal or dropdown is open
         if (!settingsModal.classList.contains('hidden') ||
-            recentDropdown.classList.contains('visible')) {
+            recentDropdown.classList.contains('visible') ||
+            bookmarksDropdown.classList.contains('visible')) {
             return;
         }
         scheduleHide();
@@ -1430,11 +1457,13 @@
             positionDropdown();
         }
         recentDropdown.classList.toggle('visible', !isVisible);
+        bookmarksDropdown.classList.remove('visible');
     });
 
     document.addEventListener('click', (e) => {
-        if (!strip.contains(e.target) && !recentDropdown.contains(e.target)) {
+        if (!strip.contains(e.target) && !recentDropdown.contains(e.target) && !bookmarksDropdown.contains(e.target)) {
             recentDropdown.classList.remove('visible');
+            bookmarksDropdown.classList.remove('visible');
         }
         if (!strip.contains(e.target) && !snapPopup.contains(e.target)) {
             snapPopup.classList.remove('visible');
@@ -1489,8 +1518,13 @@
     urlInput.addEventListener('keydown', async (e) => {
         if (e.key === 'Enter') {
             let url = urlInput.value.trim();
-            if (url && !url.match(/^https?:\/\//)) {
-                url = 'https://' + url;
+            if (!url) return;
+            if (!url.match(/^https?:\/\//)) {
+                if (url.includes(' ') || (!url.includes('.') && !url.includes(':'))) {
+                    url = 'https://duckduckgo.com/?q=' + encodeURIComponent(url);
+                } else {
+                    url = 'https://' + url;
+                }
             }
             if (url) {
                 await navigateToUrl(url);
@@ -1499,9 +1533,11 @@
     });
 
     btnHome.addEventListener('click', async () => {
-        let homeUrl = config?.home_url || EMBEDDED_HOME_URL;
-        homeUrl = homeUrl || 'https://www.google.com';
-        window.location.href = homeUrl;
+        const result = await invoke('navigate_home');
+        if (result === null) {
+            let homeUrl = config?.home_url || EMBEDDED_HOME_URL || 'https://www.google.com';
+            window.location.href = homeUrl;
+        }
     });
 
     btnLock.addEventListener('click', async () => {
@@ -1556,6 +1592,7 @@
         if (!isVisible) positionSnapPopup();
         snapPopup.classList.toggle('visible', !isVisible);
         recentDropdown.classList.remove('visible');
+        bookmarksDropdown.classList.remove('visible');
     });
 
     snapPopup.addEventListener('click', async (e) => {
@@ -1588,12 +1625,171 @@
         }
     });
 
+    // Navigation buttons
+    btnBack.addEventListener('click', () => { window.history.back(); });
+    btnForward.addEventListener('click', () => { window.history.forward(); });
+    btnRefresh.addEventListener('click', () => { window.location.reload(); });
+
+    // Bookmark functions
+    function isBookmarked(url) {
+        return config && config.bookmarks && config.bookmarks.some(b => {
+            if (b === url) return true;
+            try {
+                const bu = new URL(b);
+                const uu = new URL(url);
+                return bu.origin === uu.origin && bu.pathname.replace(/\/+$/, '') === uu.pathname.replace(/\/+$/, '') && bu.search === uu.search;
+            } catch { return false; }
+        });
+    }
+
+    function updateBookmarkIcon() {
+        const currentUrl = window.location.href;
+        const active = isBookmarked(currentUrl);
+        btnBookmark.innerHTML = active ? icons.bookmarkActive : icons.bookmark;
+        btnBookmark.classList.toggle('active', active);
+    }
+
+    function updateBookmarksDropdown() {
+        bookmarksDropdown.replaceChildren();
+        if (!config || !config.bookmarks || config.bookmarks.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'recent-empty';
+            empty.textContent = 'No bookmarks';
+            bookmarksDropdown.appendChild(empty);
+            return;
+        }
+        config.bookmarks.forEach((url) => {
+            const item = document.createElement('div');
+            item.className = 'recent-item';
+            item.style.display = 'flex';
+            item.style.justifyContent = 'space-between';
+            item.style.alignItems = 'center';
+            item.style.gap = '8px';
+            const label = document.createElement('span');
+            label.style.overflow = 'hidden';
+            label.style.textOverflow = 'ellipsis';
+            label.style.whiteSpace = 'nowrap';
+            label.style.flex = '1';
+            label.textContent = url;
+            const removeBtn = document.createElement('span');
+            removeBtn.textContent = '×';
+            removeBtn.style.cursor = 'pointer';
+            removeBtn.style.opacity = '0.4';
+            removeBtn.style.fontSize = '16px';
+            removeBtn.style.flexShrink = '0';
+            removeBtn.addEventListener('mouseenter', () => { removeBtn.style.opacity = '1'; });
+            removeBtn.addEventListener('mouseleave', () => { removeBtn.style.opacity = '0.4'; });
+            removeBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                await invoke('remove_bookmark', { url });
+                if (config) {
+                    config.bookmarks = config.bookmarks.filter(u => u !== url && !urlsMatch(u, url));
+                }
+                updateBookmarksDropdown();
+                updateBookmarkIcon();
+            });
+            item.appendChild(label);
+            item.appendChild(removeBtn);
+            item.addEventListener('click', async () => {
+                bookmarksDropdown.classList.remove('visible');
+                await navigateToUrl(url);
+            });
+            bookmarksDropdown.appendChild(item);
+        });
+    }
+
+    function positionBookmarksDropdown() {
+        const rect = btnBookmark.getBoundingClientRect();
+        bookmarksDropdown.style.top = (rect.bottom + 8) + 'px';
+        bookmarksDropdown.style.left = rect.left + 'px';
+    }
+
+    function urlsMatch(a, b) {
+        if (a === b) return true;
+        try {
+            const ua = new URL(a);
+            const ub = new URL(b);
+            return ua.origin === ub.origin && ua.pathname.replace(/\/+$/, '') === ub.pathname.replace(/\/+$/, '') && ua.search === ub.search;
+        } catch { return false; }
+    }
+
+    async function getBookmarksFromRust() {
+        const freshConfig = await invoke('get_config');
+        return freshConfig ? freshConfig.bookmarks || [] : config ? config.bookmarks || [] : [];
+    }
+
+    btnBookmark.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const currentUrl = window.location.href;
+        if (isBookmarked(currentUrl)) {
+            await invoke('remove_bookmark', { url: currentUrl });
+            if (config) {
+                config.bookmarks = config.bookmarks.filter(u => u !== currentUrl && !urlsMatch(u, currentUrl));
+            }
+            updateBookmarkIcon();
+            updateBookmarksDropdown();
+        } else {
+            await invoke('add_bookmark', { url: currentUrl });
+            if (config) {
+                config.bookmarks = await getBookmarksFromRust();
+            }
+            updateBookmarkIcon();
+            updateBookmarksDropdown();
+        }
+    });
+
+    btnBookmark.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const isVisible = bookmarksDropdown.classList.contains('visible');
+        if (!isVisible) {
+            updateBookmarksDropdown();
+            positionBookmarksDropdown();
+        }
+        bookmarksDropdown.classList.toggle('visible', !isVisible);
+        recentDropdown.classList.remove('visible');
+    });
+
+    // Window title observer
+    let _lastTitle = '';
+    function updateWindowTitle() {
+        const title = document.title || 'FloatView';
+        if (title !== _lastTitle) {
+            _lastTitle = title;
+            invoke('set_window_title', { title });
+        }
+    }
+    const _titleObserver = new MutationObserver(updateWindowTitle);
+    function observeTitle() {
+        const titleEl = document.querySelector('title');
+        if (titleEl) {
+            _titleObserver.observe(titleEl, { childList: true, characterData: true, subtree: true });
+        }
+    }
+    setInterval(updateWindowTitle, 2000);
+
+    // Track URL changes on navigation (back/forward/spa navigation)
+    let _lastTrackedUrl = window.location.href;
+    function trackUrlChange() {
+        const currentUrl = window.location.href;
+        if (currentUrl !== _lastTrackedUrl && /^https?:\/\//i.test(currentUrl)) {
+            _lastTrackedUrl = currentUrl;
+            urlInput.value = currentUrl;
+            updateBookmarkIcon();
+            invoke('set_url', { url: currentUrl });
+        }
+    }
+    window.addEventListener('popstate', trackUrlChange);
+    setInterval(trackUrlChange, 3000);
+
     const settingOntop = settingsModal.querySelector('#setting-ontop');
     const settingLocked = settingsModal.querySelector('#setting-locked');
     const settingOpacity = settingsModal.querySelector('#setting-opacity');
     const settingOpacityValue = settingsModal.querySelector('#setting-opacity-value');
     const settingHomeUrl = settingsModal.querySelector('#setting-home-url');
     const btnClearRecent = settingsModal.querySelector('#btn-clear-recent');
+    const btnClearBookmarks = settingsModal.querySelector('#btn-clear-bookmarks');
+    const btnClearSiteData = settingsModal.querySelector('#btn-clear-site-data');
     const btnCloseSettings = settingsModal.querySelector('#btn-close-settings');
     const hotkeyOntop = settingsModal.querySelector('#hotkey-ontop');
     const hotkeyLocked = settingsModal.querySelector('#hotkey-locked');
@@ -1723,6 +1919,27 @@
         }
     });
 
+    btnClearBookmarks.addEventListener('click', async () => {
+        if (config) {
+            config.bookmarks = [];
+            await invoke('update_config', { config });
+            updateBookmarksDropdown();
+            updateBookmarkIcon();
+        }
+    });
+
+    btnClearSiteData.addEventListener('click', () => {
+        try {
+            localStorage.clear();
+            sessionStorage.clear();
+            document.cookie.split(';').forEach(c => {
+                const name = c.replace(/^ +/, '').split('=')[0];
+                document.cookie = name + '=;expires=' + new Date().toUTCString() + ';path=/';
+            });
+        } catch {}
+        window.location.reload();
+    });
+
     btnCloseSettings.addEventListener('click', closeSettings);
     settingsModal.querySelector('#btn-close-settings-x').addEventListener('click', closeSettings);
     modalOverlay.addEventListener('click', () => {
@@ -1819,6 +2036,10 @@
                 exitCropSelection();
             } else if (cropActive) {
                 removeCrop();
+            } else if (bookmarksDropdown.classList.contains('visible')) {
+                bookmarksDropdown.classList.remove('visible');
+            } else if (recentDropdown.classList.contains('visible')) {
+                recentDropdown.classList.remove('visible');
             } else if (tutorialActive) {
                 dismissTutorial();
             } else if (!settingsModal.classList.contains('hidden')) {
@@ -1876,7 +2097,7 @@
         try {
             const text = (document.body?.innerText || '').substring(0, 2000);
             return /ERR_(?:SSL_|CONNECTION_|NAME_NOT_RESOLVED|CERT_|TIMED_OUT|EMPTY_RESPONSE|FAILED|BLOCKED|TUNNEL_|NETWORK_|INTERNET_|ABORTED|ADDRESS_|INVALID)/.test(text)
-                || /can['']t reach this page|this site can['']t be reached|no internet/i.test(text);
+                || /can[\u2019']t reach this page|this site can[\u2019']t be reached|no internet/i.test(text);
         } catch { return false; }
     }
 
@@ -1890,6 +2111,8 @@
                 btnLock.classList.toggle('active', config.window.locked);
                 opacitySlider.value = opacityToSlider(config.window.opacity);
                 updateRecentDropdown();
+                updateBookmarkIcon();
+                updateBookmarksDropdown();
                 if (config.window.locked) {
                     hideStrip();
                     container.style.display = 'none';
@@ -1926,6 +2149,10 @@
         } else if (config && config.last_url) {
             urlInput.value = config.last_url;
         }
+
+        updateBookmarkIcon();
+        observeTitle();
+        updateWindowTitle();
     }
 
     // Global callback for Rust to update UI reliably via eval()
@@ -1955,6 +2182,11 @@
                 container.style.display = '';
                 showStrip();
                 openSettings();
+                break;
+            case 'bookmarks':
+                if (config) config.bookmarks = value;
+                updateBookmarkIcon();
+                updateBookmarksDropdown();
                 break;
         }
     };
@@ -1996,6 +2228,8 @@
         listen('config-changed', (event) => {
             config = event.payload;
             updateRecentDropdown();
+            updateBookmarkIcon();
+            updateBookmarksDropdown();
         });
 
         listen('open-settings', () => {

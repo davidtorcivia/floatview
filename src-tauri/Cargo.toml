@@ -1,6 +1,6 @@
 [package]
 name = "floatview"
-version = "1.0.0"
+version = "1.1.0"
 description = "A minimal floating browser window for streaming media"
 authors = ["David Torcivia"]
 license = "MIT"
@@ -16,7 +16,6 @@ tauri-plugin-global-shortcut = "2"
 tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-directories = "5"
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -25,7 +24,6 @@ uuid = { version = "1", features = ["v4"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi"] }
-webview2-com = "0.38"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.26"

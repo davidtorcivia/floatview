@@ -135,12 +135,12 @@ fn get_config_path(app: &AppHandle) -> PathBuf {
     let app_dir = match app.path().app_config_dir() {
         Ok(path) => path,
         Err(e) => {
-            eprintln!("Failed to resolve app config dir: {}", e);
+            warn!("Failed to resolve app config dir: {}", e);
             std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
         }
     };
     if let Err(e) = fs::create_dir_all(&app_dir) {
-        eprintln!("Failed to create config directory: {}", e);
+        warn!("Failed to create config directory: {}", e);
     }
     app_dir.join("config.json")
 }
@@ -257,6 +257,20 @@ fn sanitize_config(mut config: AppConfig) -> AppConfig {
     config.hotkeys.media_previous =
         sanitize_hotkey(&config.hotkeys.media_previous, "Alt+Shift+Left");
 
+    let mut deduped_bookmarks = Vec::new();
+    let mut seen_bookmarks = HashSet::new();
+    for url in std::mem::take(&mut config.bookmarks) {
+        if let Ok(normalized) = normalize_url(&url) {
+            if seen_bookmarks.insert(normalized.clone()) {
+                deduped_bookmarks.push(normalized);
+            }
+        }
+        if deduped_bookmarks.len() >= 50 {
+            break;
+        }
+    }
+    config.bookmarks = deduped_bookmarks;
+
     config
 }
 
@@ -265,9 +279,9 @@ fn load_config(path: &PathBuf) -> AppConfig {
         match fs::read_to_string(path) {
             Ok(content) => match serde_json::from_str(&content) {
                 Ok(config) => return sanitize_config(config),
-                Err(e) => eprintln!("Failed to parse config: {}", e),
+                Err(e) => warn!("Failed to parse config: {}", e),
             },
-            Err(e) => eprintln!("Failed to read config: {}", e),
+            Err(e) => warn!("Failed to read config: {}", e),
         }
     }
     sanitize_config(AppConfig::default())
@@ -276,21 +290,23 @@ fn load_config(path: &PathBuf) -> AppConfig {
 fn save_config(path: &PathBuf, config: &AppConfig) {
     match serde_json::to_string_pretty(config) {
         Ok(content) => {
+            if path.exists() {
+                let _ = fs::copy(path, path.with_extension("json.bak"));
+            }
             let tmp_path = path.with_extension("json.tmp");
             if let Err(e) = fs::write(&tmp_path, content) {
-                eprintln!("Failed to save config: {}", e);
+                warn!("Failed to save config: {}", e);
                 return;
             }
             if let Err(e) = fs::rename(&tmp_path, path) {
-                // Windows cannot overwrite an existing file via rename.
                 let _ = fs::remove_file(path);
                 if let Err(e2) = fs::rename(&tmp_path, path) {
-                    eprintln!("Failed to finalize config save: {} / {}", e, e2);
+                    error!("Failed to finalize config save: {} / {}", e, e2);
                     let _ = fs::remove_file(&tmp_path);
                 }
             }
         }
-        Err(e) => eprintln!("Failed to serialize config: {}", e),
+        Err(e) => error!("Failed to serialize config: {}", e),
     }
 }
 
@@ -679,6 +695,56 @@ async fn exit_click_through(
         app.emit("locked-changed", false)
             .map_err(|e| e.to_string())?;
     }
+    Ok(())
+}
+
+#[tauri::command]
+async fn set_window_title(
+    window: WebviewWindow,
+    state: tauri::State<'_, AppState>,
+    token: String,
+    title: String,
+) -> Result<(), String> {
+    authorize_command(&state, &token, "set_window_title")?;
+    let title = if title.len() > 256 {
+        format!("{}...", &title[..253])
+    } else {
+        title
+    };
+    window.set_title(&title).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn add_bookmark(
+    state: tauri::State<'_, AppState>,
+    url: String,
+    token: String,
+) -> Result<(), String> {
+    authorize_command(&state, &token, "add_bookmark")?;
+    let url = normalize_url(&url)?;
+    let mut config = state.config.lock().map_err(|e| e.to_string())?;
+    if !config.bookmarks.contains(&url) {
+        config.bookmarks.push(url);
+        let config_clone = config.clone();
+        drop(config);
+        save_config(&state.config_path, &config_clone);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn remove_bookmark(
+    state: tauri::State<'_, AppState>,
+    url: String,
+    token: String,
+) -> Result<(), String> {
+    authorize_command(&state, &token, "remove_bookmark")?;
+    let url = normalize_url(&url)?;
+    let mut config = state.config.lock().map_err(|e| e.to_string())?;
+    config.bookmarks.retain(|u| u != &url);
+    let config_clone = config.clone();
+    drop(config);
+    save_config(&state.config_path, &config_clone);
     Ok(())
 }
 
@@ -1306,6 +1372,16 @@ fn run() {
             register_hotkeys(app.handle());
             setup_tray(app.handle())?;
 
+            let app_handle_geom = app.handle().clone();
+            let window_geom = window.clone();
+            std::thread::spawn(move || {
+                loop {
+                    std::thread::sleep(std::time::Duration::from_secs(30));
+                    let state = app_handle_geom.state::<AppState>();
+                    let _ = persist_window_geometry(&window_geom, &state);
+                }
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1327,6 +1403,9 @@ fn run() {
             maximize_toggle,
             get_version,
             check_for_updates,
+            set_window_title,
+            add_bookmark,
+            remove_bookmark,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
