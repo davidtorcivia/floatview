@@ -4,7 +4,7 @@ Guide for AI agents working on the FloatView codebase.
 
 ## Project Overview
 
-FloatView is a Tauri v2 application that provides a floating browser window for streaming media on secondary monitors. Key features include always-on-top, borderless resizable window, opacity control, click-through mode, persistent bookmarks, navigation controls, smart URL bar with DuckDuckGo search, window title tracking, crash recovery (config backup + periodic geometry auto-save), and clear site data.
+FloatView is a Tauri v2 application that provides a floating browser window for streaming media on secondary monitors. Key features include always-on-top, borderless resizable window, opacity control, click-through mode, persistent bookmarks, navigation controls, smart URL bar with DuckDuckGo search, window title tracking, crash recovery (config backup + periodic geometry auto-save), crop/zoom region, and clear site data.
 
 ## Tech Stack
 
@@ -26,7 +26,7 @@ npm install         # Install dependencies
 npm run dev         # Development mode with hot reload
 npm run build       # Build production release
 cd src-tauri && cargo check  # Type-check Rust only
-cd src-tauri && cargo test   # Run unit tests (5 tests)
+cd src-tauri && cargo test   # Run unit tests
 ```
 
 ## Project Structure
@@ -39,7 +39,8 @@ floatview/
 │   ├── src/
 │   │   ├── main.rs             # Main application logic
 │   │   ├── config.rs           # Configuration types
-│   │   ├── click_through.rs    # Win32 WS_EX_TRANSPARENT interop
+│   │   ├── opacity.rs          # Cross-platform opacity interop
+│   │   ├── clear_site_data.rs  # Browsing data clearing wrapper
 │   │   └── injection.js        # Shadow DOM control strip (embedded)
 │   ├── capabilities/
 │   │   └── default.json        # Tauri v2 permissions
@@ -96,23 +97,54 @@ The drag bar uses `-webkit-app-region: drag` for native WebView2 drag handling. 
 
 | Command | Purpose | File |
 |---------|---------|------|
-| `navigate_url` | Navigate to a URL | `main.rs:680` |
-| `navigate_home` | Navigate to home URL | `main.rs:751` |
+| `navigate` | Navigate to a URL (returns `true`) | `main.rs` |
+| `navigate_home` | Navigate to home URL (returns `true`) | `main.rs` |
 | `toggle_always_on_top` | Toggle pin state | `main.rs` |
 | `toggle_locked` | Toggle click-through | `main.rs` |
 | `set_opacity` | Set window opacity | `main.rs` |
+| `set_opacity_live` | Set opacity without persisting | `main.rs` |
 | `minimize_window` | Minimize window | `main.rs` |
 | `get_config` | Read current config | `main.rs` |
 | `update_config` | Update config fields | `main.rs` |
-| `set_home_url` | Set the home page URL | `main.rs` |
-| `clear_recent_urls` | Clear recent URL list | `main.rs` |
-| `clear_bookmarks` | Clear all bookmarks | `main.rs` |
-| `clear_site_data` | Clear cookies/storage then reload | `main.rs` |
-| `set_window_title` | Set window title (truncated to 256 chars) | `main.rs:702` |
-| `add_bookmark` | Add URL to bookmarks (dedup, max 50) | `main.rs:718` |
-| `remove_bookmark` | Remove URL from bookmarks | `main.rs:736` |
+| `set_url` | Set the last_url and recent list | `main.rs` |
+| `save_window_geometry` | Persist current geometry | `main.rs` |
+| `snap_window` | Snap window to corner/center | `main.rs` |
+| `open_settings` | Emit open-settings event | `main.rs` |
+| `exit_click_through` | Disable click-through mode | `main.rs` |
+| `close_window` | Close window | `main.rs` |
+| `maximize_toggle` | Maximize/unmaximize window | `main.rs` |
+| `get_version` | Get app version string | `main.rs` |
+| `check_for_updates` | Check for available updates | `main.rs` |
+| `set_window_title` | Set window title (truncated to 256 chars) | `main.rs` |
+| `add_bookmark` | Add URL to bookmarks (dedup, max 50) | `main.rs` |
+| `remove_bookmark` | Remove URL from bookmarks (fuzzy match) | `main.rs` |
+| `set_crop` | Persist crop region | `main.rs` |
+| `clear_crop` | Clear persisted crop region | `main.rs` |
+| `clear_site_data` | Clear all webview browsing data | `clear_site_data.rs` |
 
 All commands require an auth token (`token` param) via `authorize_command()`.
+
+### Config Serialization (Background Channel)
+
+Config saves are performed by a dedicated background thread to avoid blocking the async runtime and to prevent races:
+
+```rust
+// In run():
+let (save_tx, save_rx) = std::sync::mpsc::channel::<AppConfig>();
+std::thread::spawn(move || {
+    while let Ok(cfg) = save_rx.recv() {
+        do_save_config(&path, &cfg);
+    }
+});
+
+// Commands mutate the Mutex, then call:
+save_config(&state, &config);  // sends clone to channel
+```
+
+This ensures that:
+1. The `Mutex` is never held during disk I/O.
+2. All writes are serialized (no race between geometry thread and user actions).
+3. The existing config file is never deleted on a failed rename.
 
 ### Config Struct (`config.rs`)
 
@@ -125,16 +157,26 @@ pub struct AppConfig {
     pub home_url: String,
     pub first_run: bool,
     pub auto_refresh_minutes: u32,
-    pub bookmarks: Vec<String>,     // new in v1.1
+    pub bookmarks: Vec<String>,
+    pub crop: Option<CropConfig>,   // x, y, width, height (0-1 normalized)
 }
 ```
+
+### Tray Menu Dynamic Updates
+
+The tray's **Exit Click-Through Mode** item is dynamically enabled/disabled to match the actual locked state. A closure setter is stored in `AppState` because `MenuItem` is generic over `Runtime`:
+
+```rust
+tray_exit_lock_setter: Mutex<Option<Box<dyn Fn(bool) + Send + Sync>>>
+```
+
+It is disabled on startup (since locked mode is auto-cleared for safety) and updated whenever locked state changes.
 
 ### Adding a Tauri Command
 
 1. Add function with `#[tauri::command]` attribute in `main.rs`
 2. Add to `invoke_handler!` macro
-3. Add required permissions in `capabilities/default.json`
-4. Call from JS via `invoke('command_name', { args })`
+3. Call from JS via `invoke('command_name', { args })`
 
 All commands must accept a `token: String` parameter and call `authorize_command(&state, &token, "command_name")?`.
 
@@ -152,14 +194,14 @@ Edit `src-tauri/src/injection.js`. The script:
 - Uses `MutationObserver` to survive page DOM changes
 - Re-initializes on every navigation (guarded by `window.__floatViewInitialized`)
 
-Control strip layout (v1.1):
+Control strip layout:
 ```
-┌─────────────────────────────────────────────────────┐
-│ ← → ⟳ ★ [URL bar - DDG search fallback] 📌 🔒 ⚙ — ✕ │
-└─────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│ [←] [→] [⟳] [Pin] [Recent] [Home] [URL bar] [★] [Lock] [Snap] [Crop] | [Opacity] [⚙] [−] [✕] │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-Buttons: back, forward, refresh, bookmark star (click toggle, right-click dropdown), always-on-top pin, lock, settings, minimize, close.
+Buttons: back, forward, refresh, bookmark star (click toggle, right-click dropdown), always-on-top pin, lock, snap, crop, settings, minimize, close.
 
 Key injection.js features:
 - **URL bar**: DuckDuckGo search fallback for non-URL input
@@ -169,6 +211,8 @@ Key injection.js features:
 - **URL tracking**: `popstate` + 3s polling for address bar sync
 - **Config sync**: `config-changed` event listener updates bookmarks in real-time
 - **Dropdown mutual exclusion**: recent/bookmarks/snap dropdowns dismiss each other
+- **Crop/Zoom**: Select region, persist via `set_crop`, restore on init and resize
+- **Media hotkeys**: `window.__floatViewLastMedia` tracks the most recently interacted `<video>` or `<audio>` element
 
 ## Gotchas
 
@@ -178,27 +222,31 @@ Key injection.js features:
 
 3. **Mutex lifetime in helpers** -- When using `app.state::<AppState>()` in block expressions, use `.lock().unwrap()` not `if let Ok(...)` to avoid lifetime issues with the State temporary.
 
-4. **Click-through mode is a trap** -- When locked, the control strip is hidden AND mouse events pass through. Users can only exit via global hotkey or tray menu. Always ensure these escape hatches work.
+4. **Click-through mode is a trap** -- When locked, the control strip is hidden AND mouse events pass through. Users can only exit via global hotkey or tray menu. Always ensure these escape hatches work. The app auto-disables locked mode on startup for safety.
 
 5. **User Agent** -- Set to Edge UA string for Direct Play support with Emby/Plex. See `inject_script_on_document_created()`.
 
-6. **Opacity on Windows** -- Uses `SetLayeredWindowAttributes` with `WS_EX_LAYERED`. The `transparent: true` Tauri config is required for this to work.
+6. **Opacity on Windows** -- Uses `SetLayeredWindowAttributes` with `WS_EX_LAYERED`. The `transparent: true` Tauri config is required for this to work. Opacity is applied with a 300ms startup delay to ensure the native HWND is ready.
 
 7. **Single Instance** -- `tauri-plugin-single-instance` brings existing window to front if user launches again.
 
-8. **Config backup** -- `save_config()` creates a `.bak` copy before writing. Used for crash recovery.
+8. **Config backup** -- `do_save_config()` creates a `.bak` copy before writing. Used for crash recovery. It does NOT delete the existing config if the atomic rename fails.
 
 9. **Periodic geometry auto-save** -- Background thread saves window position/size every 30s (skips minimized/maximized). Prevents geometry loss on crash.
 
-10. **Bookmark limits** -- Max 50 bookmarks, deduplication by normalized URL, sanitized via `sanitize_config()`. 
+10. **Bookmark limits** -- Max 50 bookmarks, deduplication by normalized URL and fuzzy `urls_match`, sanitized via `sanitize_config()`.
 
 11. **Title truncation** -- `set_window_title` truncates titles >256 chars to prevent Win32 issues.
 
 12. **Logging** -- Uses `tracing` crate (`warn!`, `error!`) instead of `eprintln!` for structured logging.
 
+13. **Config save channel** -- All config mutations are serialized through a background `std::sync::mpsc` channel to eliminate races and keep the async runtime responsive.
+
+14. **Error-page detection** -- The injected script detects browser error pages using multiple heuristics (requires at least 2 indicators or a definitive error title) to avoid false positives on tech blogs.
+
 ## Testing
 
-5 unit tests in `src-tauri/` (run via `cargo test`). Test manually:
+Run unit tests in `src-tauri/` (via `cargo test`). Test manually:
 
 1. `npm run dev`
 2. Test URL navigation (landing page + control strip URL bar + DDG search fallback)
@@ -213,3 +261,7 @@ Key injection.js features:
 11. Test bookmark star (toggle on/off, right-click dropdown shows list)
 12. Test clear site data (Settings button, verify cookies/storage cleared)
 13. Test window title updates when navigating between pages
+14. Test crop/zoom (select region, verify persist/restore across restarts)
+15. Test tray quit preserves geometry
+16. Test media hotkeys target the most recently interacted player
+17. Test error-page redirect only fires on actual browser errors

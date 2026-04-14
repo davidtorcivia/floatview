@@ -26,6 +26,33 @@
     let hideTimer = null;
     let config = null;
 
+    // Track most recently interacted media element for global hotkeys
+    window.__floatViewLastMedia = null;
+    (function trackMediaInteractions() {
+        const updateLast = (e) => { window.__floatViewLastMedia = e.target; };
+        const attach = (m) => {
+            if (!m.dataset.floatviewTracked) {
+                m.dataset.floatviewTracked = '1';
+                m.addEventListener('play', updateLast, { passive: true });
+                m.addEventListener('pause', updateLast, { passive: true });
+                m.addEventListener('volumechange', updateLast, { passive: true });
+                m.addEventListener('click', updateLast, { passive: true });
+            }
+        };
+        document.querySelectorAll('video, audio').forEach(attach);
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach((m) => {
+                m.addedNodes.forEach((node) => {
+                    if (node.nodeType === 1) {
+                        if (node.matches && (node.matches('video') || node.matches('audio'))) attach(node);
+                        if (node.querySelectorAll) node.querySelectorAll('video, audio').forEach(attach);
+                    }
+                });
+            });
+        });
+        if (document.body) observer.observe(document.body, { childList: true, subtree: true });
+    })();
+
     const container = document.createElement('div');
     container.id = 'floatview-root';
     container.style.cssText = 'position:fixed;top:0;left:0;right:0;height:0;z-index:2147483647;pointer-events:none;';
@@ -1285,6 +1312,9 @@
         }
         cropActive = true;
         btnCrop.classList.add('active');
+        if (animate) {
+            invoke('set_crop', { x, y, width: w, height: h });
+        }
     }
 
     function removeCrop() {
@@ -1300,6 +1330,7 @@
         }, 320);
         cropActive = false;
         btnCrop.classList.remove('active');
+        invoke('clear_crop');
     }
 
     window.addEventListener('resize', () => {
@@ -1928,7 +1959,7 @@
         }
     });
 
-    btnClearSiteData.addEventListener('click', () => {
+    btnClearSiteData.addEventListener('click', async () => {
         try {
             localStorage.clear();
             sessionStorage.clear();
@@ -1937,6 +1968,7 @@
                 document.cookie = name + '=;expires=' + new Date().toUTCString() + ';path=/';
             });
         } catch {}
+        await invoke('clear_site_data');
         window.location.reload();
     });
 
@@ -2096,8 +2128,21 @@
     function isErrorPage() {
         try {
             const text = (document.body?.innerText || '').substring(0, 2000);
-            return /ERR_(?:SSL_|CONNECTION_|NAME_NOT_RESOLVED|CERT_|TIMED_OUT|EMPTY_RESPONSE|FAILED|BLOCKED|TUNNEL_|NETWORK_|INTERNET_|ABORTED|ADDRESS_|INVALID)/.test(text)
-                || /can[\u2019']t reach this page|this site can[\u2019']t be reached|no internet/i.test(text);
+            const title = document.title || '';
+            const patterns = [
+                /ERR_(?:SSL_|CONNECTION_|NAME_NOT_RESOLVED|CERT_|TIMED_OUT|EMPTY_RESPONSE|FAILED|BLOCKED|TUNNEL_|NETWORK_|INTERNET_|ABORTED|ADDRESS_|INVALID)/,
+                /can[\u2019']t reach this page/i,
+                /this site can[\u2019']t be reached/i,
+                /no internet/i,
+                /refused to connect/i,
+                /dns_probe_finished/i
+            ];
+            let matches = 0;
+            for (const p of patterns) {
+                if (p.test(text) || p.test(title)) matches++;
+            }
+            // Require at least 2 matches, or a definitive error title plus 1 match
+            return matches >= 2 || (/^(This site can.t be reached|Can.t reach this page|Error|Http Error)/i.test(title) && matches >= 1);
         } catch { return false; }
     }
 
@@ -2153,6 +2198,10 @@
         updateBookmarkIcon();
         observeTitle();
         updateWindowTitle();
+
+        if (config && config.crop) {
+            applyCrop(config.crop.x, config.crop.y, config.crop.width, config.crop.height);
+        }
     }
 
     // Global callback for Rust to update UI reliably via eval()

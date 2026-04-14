@@ -17,6 +17,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 use url::Url;
 use uuid::Uuid;
 
+mod clear_site_data;
 mod config;
 mod opacity;
 
@@ -34,7 +35,7 @@ const MAX_WINDOW_SIZE: i32 = 10_000;
 
 const MEDIA_PLAY_PAUSE_SCRIPT: &str = r#"
 (() => {
-  const media = document.querySelector('video, audio');
+  const media = window.__floatViewLastMedia || document.querySelector('video, audio');
   if (!media) return;
   if (media.paused) {
     media.play().catch(() => {});
@@ -46,11 +47,11 @@ const MEDIA_PLAY_PAUSE_SCRIPT: &str = r#"
 
 const MEDIA_NEXT_SCRIPT: &str = r#"
 (() => {
-  const media = document.querySelector('video, audio');
+  const media = window.__floatViewLastMedia || document.querySelector('video, audio');
   if (!media) return;
-  if (media.duration && Number.isFinite(media.duration)) {
+  if (Number.isFinite(media.duration) && Number.isFinite(media.currentTime)) {
     media.currentTime = Math.min(media.duration, media.currentTime + 30);
-  } else {
+  } else if (Number.isFinite(media.currentTime)) {
     media.currentTime = media.currentTime + 30;
   }
 })();
@@ -58,9 +59,11 @@ const MEDIA_NEXT_SCRIPT: &str = r#"
 
 const MEDIA_PREVIOUS_SCRIPT: &str = r#"
 (() => {
-  const media = document.querySelector('video, audio');
+  const media = window.__floatViewLastMedia || document.querySelector('video, audio');
   if (!media) return;
-  media.currentTime = Math.max(0, media.currentTime - 15);
+  if (Number.isFinite(media.currentTime)) {
+    media.currentTime = Math.max(0, media.currentTime - 15);
+  }
 })();
 "#;
 
@@ -75,8 +78,9 @@ const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KH
 
 pub struct AppState {
     config: Mutex<AppConfig>,
-    config_path: PathBuf,
     command_token: String,
+    save_tx: std::sync::mpsc::Sender<AppConfig>,
+    tray_exit_lock_setter: Mutex<Option<Box<dyn Fn(bool) + Send + Sync>>>,
 }
 
 pub struct LoggingState {
@@ -271,10 +275,17 @@ fn sanitize_config(mut config: AppConfig) -> AppConfig {
     }
     config.bookmarks = deduped_bookmarks;
 
+    if let Some(crop) = &mut config.crop {
+        crop.x = crop.x.clamp(0.0, 1.0);
+        crop.y = crop.y.clamp(0.0, 1.0);
+        crop.width = crop.width.clamp(0.0, 1.0);
+        crop.height = crop.height.clamp(0.0, 1.0);
+    }
+
     config
 }
 
-fn load_config(path: &PathBuf) -> AppConfig {
+fn load_config(path: &std::path::Path) -> AppConfig {
     if path.exists() {
         match fs::read_to_string(path) {
             Ok(content) => match serde_json::from_str(&content) {
@@ -287,7 +298,7 @@ fn load_config(path: &PathBuf) -> AppConfig {
     sanitize_config(AppConfig::default())
 }
 
-fn save_config(path: &PathBuf, config: &AppConfig) {
+fn do_save_config(path: &std::path::Path, config: &AppConfig) {
     match serde_json::to_string_pretty(config) {
         Ok(content) => {
             if path.exists() {
@@ -299,22 +310,23 @@ fn save_config(path: &PathBuf, config: &AppConfig) {
                 return;
             }
             if let Err(e) = fs::rename(&tmp_path, path) {
-                let _ = fs::remove_file(path);
-                if let Err(e2) = fs::rename(&tmp_path, path) {
-                    error!("Failed to finalize config save: {} / {}", e, e2);
-                    let _ = fs::remove_file(&tmp_path);
-                }
+                error!("Failed to finalize config save: {}", e);
+                // Keep existing config file; temp file remains for manual recovery
             }
         }
         Err(e) => error!("Failed to serialize config: {}", e),
     }
 }
 
+fn save_config(state: &AppState, config: &AppConfig) {
+    let _ = state.save_tx.send(config.clone());
+}
+
 #[tauri::command]
 async fn get_config(state: tauri::State<'_, AppState>, token: String) -> Result<AppConfig, String> {
     authorize_command(&state, &token, "get_config")?;
-    let config = state.config.lock().map_err(|e| e.to_string())?;
-    Ok(config.clone())
+    let config = state.config.lock().map_err(|e| e.to_string())?.clone();
+    Ok(config)
 }
 
 #[tauri::command]
@@ -329,8 +341,8 @@ async fn update_config(
     {
         let mut current = state.config.lock().map_err(|e| e.to_string())?;
         *current = config.clone();
+        save_config(&state, &current);
     }
-    save_config(&state.config_path, &config);
 
     app.emit("config-changed", &config)
         .map_err(|e| e.to_string())?;
@@ -343,13 +355,14 @@ async fn navigate(
     state: tauri::State<'_, AppState>,
     url: String,
     token: String,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     authorize_command(&state, &token, "navigate")?;
     let url = normalize_url(&url)?;
     persist_recent_url(&state, &url)?;
     window
         .eval(format!("window.location.href = {:?}", url))
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    Ok(true)
 }
 
 #[tauri::command]
@@ -368,9 +381,8 @@ async fn toggle_always_on_top(
 
     let mut config = state.config.lock().map_err(|e| e.to_string())?;
     config.window.always_on_top = new_value;
-    let config_clone = config.clone();
+    save_config(&state, &config);
     drop(config);
-    save_config(&state.config_path, &config_clone);
 
     app.emit("always-on-top-changed", new_value)
         .map_err(|e| e.to_string())?;
@@ -391,9 +403,8 @@ async fn set_opacity(
 
     let mut config = state.config.lock().map_err(|e| e.to_string())?;
     config.window.opacity = opacity;
-    let config_clone = config.clone();
+    save_config(&state, &config);
     drop(config);
-    save_config(&state.config_path, &config_clone);
 
     app.emit("opacity-changed", opacity)
         .map_err(|e| e.to_string())?;
@@ -425,15 +436,16 @@ async fn toggle_locked(
         let mut config = state.config.lock().map_err(|e| e.to_string())?;
         let new_value = !config.window.locked;
         config.window.locked = new_value;
-        let config_clone = config.clone();
+        save_config(&state, &config);
         drop(config);
-        save_config(&state.config_path, &config_clone);
         new_value
     };
 
     window
         .set_ignore_cursor_events(new_value)
         .map_err(|e| e.to_string())?;
+
+    update_tray_exit_lock_enabled(&app, new_value);
 
     app.emit("locked-changed", new_value)
         .map_err(|e| e.to_string())?;
@@ -472,9 +484,8 @@ fn persist_recent_url(state: &AppState, url: &str) -> Result<(), String> {
         return Ok(());
     }
 
-    let config_clone = config.clone();
+    save_config(&state, &config);
     drop(config);
-    save_config(&state.config_path, &config_clone);
     Ok(())
 }
 
@@ -517,9 +528,8 @@ fn persist_window_geometry<R: Runtime>(
         size.width as i32,
         size.height as i32,
     );
-    let config_clone = config.clone();
+    save_config(&state, &config);
     drop(config);
-    save_config(&state.config_path, &config_clone);
     Ok(())
 }
 
@@ -684,13 +694,14 @@ async fn exit_click_through(
     let mut config = state.config.lock().map_err(|e| e.to_string())?;
     if config.window.locked {
         config.window.locked = false;
-        let config_clone = config.clone();
+        save_config(&state, &config);
         drop(config);
-        save_config(&state.config_path, &config_clone);
 
         window
             .set_ignore_cursor_events(false)
             .map_err(|e| e.to_string())?;
+
+        update_tray_exit_lock_enabled(&app, false);
 
         app.emit("locked-changed", false)
             .map_err(|e| e.to_string())?;
@@ -714,6 +725,17 @@ async fn set_window_title(
     window.set_title(&title).map_err(|e| e.to_string())
 }
 
+fn urls_match(a: &str, b: &str) -> bool {
+    if a == b {
+        return true;
+    }
+    let Ok(ua) = Url::parse(a) else { return false };
+    let Ok(ub) = Url::parse(b) else { return false };
+    ua.origin() == ub.origin()
+        && ua.path().trim_end_matches('/') == ub.path().trim_end_matches('/')
+        && ua.query() == ub.query()
+}
+
 #[tauri::command]
 async fn add_bookmark(
     state: tauri::State<'_, AppState>,
@@ -723,12 +745,14 @@ async fn add_bookmark(
     authorize_command(&state, &token, "add_bookmark")?;
     let url = normalize_url(&url)?;
     let mut config = state.config.lock().map_err(|e| e.to_string())?;
-    if !config.bookmarks.contains(&url) {
-        config.bookmarks.push(url);
-        let config_clone = config.clone();
-        drop(config);
-        save_config(&state.config_path, &config_clone);
+    if config.bookmarks.len() >= 50 {
+        return Err("Bookmark limit reached (max 50)".to_string());
     }
+    if !config.bookmarks.iter().any(|b| urls_match(b, &url)) {
+        config.bookmarks.push(url);
+        save_config(&state, &config);
+    }
+    drop(config);
     Ok(())
 }
 
@@ -741,10 +765,54 @@ async fn remove_bookmark(
     authorize_command(&state, &token, "remove_bookmark")?;
     let url = normalize_url(&url)?;
     let mut config = state.config.lock().map_err(|e| e.to_string())?;
-    config.bookmarks.retain(|u| u != &url);
-    let config_clone = config.clone();
+    config.bookmarks.retain(|u| !urls_match(u, &url));
+    save_config(&state, &config);
     drop(config);
-    save_config(&state.config_path, &config_clone);
+    Ok(())
+}
+
+#[tauri::command]
+async fn set_crop(
+    state: tauri::State<'_, AppState>,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    token: String,
+) -> Result<(), String> {
+    authorize_command(&state, &token, "set_crop")?;
+    let mut config = state.config.lock().map_err(|e| e.to_string())?;
+    config.crop = Some(config::CropConfig {
+        x: x.clamp(0.0, 1.0),
+        y: y.clamp(0.0, 1.0),
+        width: width.clamp(0.0, 1.0),
+        height: height.clamp(0.0, 1.0),
+    });
+    save_config(&state, &config);
+    drop(config);
+    Ok(())
+}
+
+#[tauri::command]
+async fn clear_site_data(
+    window: WebviewWindow,
+    state: tauri::State<'_, AppState>,
+    token: String,
+) -> Result<(), String> {
+    authorize_command(&state, &token, "clear_site_data")?;
+    clear_site_data::clear_all_browsing_data(&window)
+}
+
+#[tauri::command]
+async fn clear_crop(
+    state: tauri::State<'_, AppState>,
+    token: String,
+) -> Result<(), String> {
+    authorize_command(&state, &token, "clear_crop")?;
+    let mut config = state.config.lock().map_err(|e| e.to_string())?;
+    config.crop = None;
+    save_config(&state, &config);
+    drop(config);
     Ok(())
 }
 
@@ -753,20 +821,19 @@ async fn navigate_home(
     window: WebviewWindow,
     state: tauri::State<'_, AppState>,
     token: String,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     authorize_command(&state, &token, "navigate_home")?;
     let home_url = {
         let mut config = state.config.lock().map_err(|e| e.to_string())?;
         config.last_url = None;
-        let config_clone = config.clone();
-        drop(config);
-        save_config(&state.config_path, &config_clone);
-        normalize_url(&config_clone.home_url).unwrap_or_else(|_| DEFAULT_HOME_URL.to_string())
+        save_config(&state, &config);
+        normalize_url(&config.home_url).unwrap_or_else(|_| DEFAULT_HOME_URL.to_string())
     };
     let _ = window.eval("window.stop()");
     window
         .eval(format!("window.location.href = {:?}", home_url))
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    Ok(true)
 }
 
 // Direct action helpers (called from hotkeys and tray menu, no JS round-trip)
@@ -775,7 +842,7 @@ fn do_navigate_home<R: Runtime>(app: &AppHandle<R>) {
         let state = app.state::<AppState>();
         let home_url = if let Ok(mut config) = state.config.lock() {
             config.last_url = None;
-            save_config(&state.config_path, &config);
+            save_config(&state, &config);
             normalize_url(&config.home_url).unwrap_or_else(|_| DEFAULT_HOME_URL.to_string())
         } else {
             DEFAULT_HOME_URL.to_string()
@@ -794,7 +861,7 @@ fn do_toggle_always_on_top<R: Runtime>(app: &AppHandle<R>) {
         let state = app.state::<AppState>();
         if let Ok(mut config) = state.config.lock() {
             config.window.always_on_top = new_value;
-            save_config(&state.config_path, &config);
+            save_config(&state, &config);
         }
 
         let _ = app.emit("always-on-top-changed", new_value);
@@ -802,6 +869,18 @@ fn do_toggle_always_on_top<R: Runtime>(app: &AppHandle<R>) {
             "if(window.__floatViewUpdate) window.__floatViewUpdate('always_on_top', {})",
             new_value
         ));
+    }
+}
+
+fn update_tray_exit_lock_enabled<R: Runtime>(app: &AppHandle<R>, enabled: bool) {
+    if let Some(setter) = app
+        .state::<AppState>()
+        .tray_exit_lock_setter
+        .lock()
+        .unwrap()
+        .as_ref()
+    {
+        setter(enabled);
     }
 }
 
@@ -818,11 +897,13 @@ fn do_toggle_locked<R: Runtime>(app: &AppHandle<R>) {
             };
             let nv = !config.window.locked;
             config.window.locked = nv;
-            save_config(&state.config_path, &config);
+            save_config(&state, &config);
             nv
         };
 
         let _ = window.set_ignore_cursor_events(new_value);
+
+        update_tray_exit_lock_enabled(app, new_value);
 
         let _ = app.emit("locked-changed", new_value);
         let _ = window.eval(format!(
@@ -859,7 +940,7 @@ fn do_exit_click_through<R: Runtime>(app: &AppHandle<R>) {
                 }
             };
             config.window.locked = false;
-            save_config(&state.config_path, &config);
+            save_config(&state, &config);
         }
 
         let _ = window.set_ignore_cursor_events(false);
@@ -883,7 +964,7 @@ fn do_opacity_change<R: Runtime>(app: &AppHandle<R>, delta: f64) {
             };
             let op = (config.window.opacity + delta).clamp(0.1, 1.0);
             config.window.opacity = op;
-            save_config(&state.config_path, &config);
+            save_config(&state, &config);
             op
         };
 
@@ -957,14 +1038,79 @@ fn register_hotkeys<R: Runtime>(app: &AppHandle<R>) {
         }
 
         let code = match parts.last()?.trim().to_lowercase().as_str() {
-            "t" => Code::KeyT,
+            "a" => Code::KeyA,
+            "b" => Code::KeyB,
+            "c" => Code::KeyC,
             "d" => Code::KeyD,
+            "e" => Code::KeyE,
+            "f" => Code::KeyF,
+            "g" => Code::KeyG,
+            "h" => Code::KeyH,
+            "i" => Code::KeyI,
+            "j" => Code::KeyJ,
+            "k" => Code::KeyK,
+            "l" => Code::KeyL,
+            "m" => Code::KeyM,
+            "n" => Code::KeyN,
+            "o" => Code::KeyO,
             "p" => Code::KeyP,
+            "q" => Code::KeyQ,
+            "r" => Code::KeyR,
+            "s" => Code::KeyS,
+            "t" => Code::KeyT,
+            "u" => Code::KeyU,
+            "v" => Code::KeyV,
+            "w" => Code::KeyW,
+            "x" => Code::KeyX,
+            "y" => Code::KeyY,
+            "z" => Code::KeyZ,
+            "0" => Code::Digit0,
+            "1" => Code::Digit1,
+            "2" => Code::Digit2,
+            "3" => Code::Digit3,
+            "4" => Code::Digit4,
+            "5" => Code::Digit5,
+            "6" => Code::Digit6,
+            "7" => Code::Digit7,
+            "8" => Code::Digit8,
+            "9" => Code::Digit9,
             "up" => Code::ArrowUp,
             "down" => Code::ArrowDown,
             "left" => Code::ArrowLeft,
             "right" => Code::ArrowRight,
-            "h" => Code::KeyH,
+            "space" => Code::Space,
+            "enter" => Code::Enter,
+            "esc" | "escape" => Code::Escape,
+            "tab" => Code::Tab,
+            "backspace" => Code::Backspace,
+            "delete" => Code::Delete,
+            "home" => Code::Home,
+            "end" => Code::End,
+            "pageup" => Code::PageUp,
+            "pagedown" => Code::PageDown,
+            "f1" => Code::F1,
+            "f2" => Code::F2,
+            "f3" => Code::F3,
+            "f4" => Code::F4,
+            "f5" => Code::F5,
+            "f6" => Code::F6,
+            "f7" => Code::F7,
+            "f8" => Code::F8,
+            "f9" => Code::F9,
+            "f10" => Code::F10,
+            "f11" => Code::F11,
+            "f12" => Code::F12,
+            "[" => Code::BracketLeft,
+            "]" => Code::BracketRight,
+            ";" => Code::Semicolon,
+            "'" => Code::Quote,
+            "," => Code::Comma,
+            "." => Code::Period,
+            "/" => Code::Slash,
+            "\\" => Code::Backslash,
+            "`" => Code::Backquote,
+            "-" => Code::Minus,
+            "=" => Code::Equal,
             _ => return None,
         };
 
@@ -1181,14 +1327,20 @@ fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::
         ],
     )?;
 
-    let icon = app.default_window_icon().cloned().ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "app should have a default window icon",
-        )
-    })?;
+    let icon = match app.default_window_icon().cloned() {
+        Some(icon) => icon,
+        None => tauri::image::Image::new_owned(vec![0, 0, 0, 0], 1, 1),
+    };
 
-    let _tray = TrayIconBuilder::new()
+    {
+        let state = app.state::<AppState>();
+        let exit_lock_clone = exit_lock.clone();
+        *state.tray_exit_lock_setter.lock().unwrap() = Some(Box::new(move |enabled| {
+            let _ = exit_lock_clone.set_enabled(enabled);
+        }));
+    }
+
+    let _tray = TrayIconBuilder::with_id("main")
         .icon(icon)
         .menu(&menu)
         .tooltip("FloatView - Right-click for options")
@@ -1227,6 +1379,10 @@ fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::
                 do_install_update(app);
             }
             "quit" => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let state = app.state::<AppState>();
+                    let _ = persist_window_geometry(&window, &state);
+                }
                 app.exit(0);
             }
             _ => {}
@@ -1280,7 +1436,6 @@ fn is_position_visible(
 
 fn apply_window_state(window: &WebviewWindow, config: &AppConfig) {
     let _ = window.set_always_on_top(config.window.always_on_top);
-    opacity::set_window_opacity(window, config.window.opacity);
     let _ = window.set_ignore_cursor_events(config.window.locked);
 
     let (width, height) = normalize_startup_window_size(config.window.width, config.window.height);
@@ -1327,10 +1482,19 @@ fn run() {
             let command_token = Uuid::new_v4().to_string();
             let injection_script = build_injection_script(&command_token, &config.home_url);
 
+            let (save_tx, save_rx) = std::sync::mpsc::channel::<AppConfig>();
+            let saver_path = config_path.clone();
+            std::thread::spawn(move || {
+                while let Ok(cfg) = save_rx.recv() {
+                    do_save_config(&saver_path, &cfg);
+                }
+            });
+
             let state = AppState {
                 config: Mutex::new(config.clone()),
-                config_path,
                 command_token,
+                save_tx,
+                tray_exit_lock_setter: Mutex::new(None),
             };
             app.manage(state);
 
@@ -1345,6 +1509,24 @@ fn run() {
                     .build()?;
 
             apply_window_state(&window, &config);
+
+            {
+                let state_ref = app.state::<AppState>();
+                let mut c = state_ref.config.lock().unwrap();
+                if c.window.locked {
+                    c.window.locked = false;
+                    let _ = window.set_ignore_cursor_events(false);
+                    save_config(&state_ref, &c);
+                }
+            }
+            update_tray_exit_lock_enabled(app.handle(), false);
+
+            let window_for_opacity = window.clone();
+            let opacity = config.window.opacity;
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(300));
+                opacity::set_window_opacity(&window_for_opacity, opacity);
+            });
 
             let nav_url = config
                 .last_url
@@ -1406,6 +1588,9 @@ fn run() {
             set_window_title,
             add_bookmark,
             remove_bookmark,
+            set_crop,
+            clear_crop,
+            clear_site_data,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

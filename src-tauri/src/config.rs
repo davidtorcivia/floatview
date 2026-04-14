@@ -55,6 +55,14 @@ impl Default for HotkeyConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CropConfig {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub window: WindowConfig,
     pub last_url: Option<String>,
@@ -68,6 +76,8 @@ pub struct AppConfig {
     pub auto_refresh_minutes: u32,
     #[serde(default)]
     pub bookmarks: Vec<String>,
+    #[serde(default)]
+    pub crop: Option<CropConfig>,
 }
 
 fn default_home_url() -> String {
@@ -89,6 +99,7 @@ impl Default for AppConfig {
             first_run: true,
             auto_refresh_minutes: 0,
             bookmarks: Vec::new(),
+            crop: None,
         }
     }
 }
