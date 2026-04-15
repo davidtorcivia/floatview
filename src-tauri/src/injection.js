@@ -1,8 +1,41 @@
+/* ==========================================================================
+ * FloatView control strip — injected into every page by Tauri's
+ * `initialization_script`. Runs inside a closed Shadow DOM so the strip can't
+ * leak styles or event listeners to the host page, and the host page cannot
+ * reach into ours.
+ *
+ * Table of contents (all in one IIFE so the host page sees no globals):
+ *
+ *   1. Constants & utilities
+ *   2. Media-element interaction tracking (for global hotkeys)
+ *   3. Shadow DOM container + stylesheet
+ *   4. Control strip markup & icons
+ *   5. Popups (snap, recent, bookmarks, context menu)
+ *   6. Settings modal + tutorial modal
+ *   7. Element queries (btn-*, url-input, opacity-slider)
+ *   8. Auto-refresh timer
+ *   9. Crop / zoom selection + apply
+ *  10. Show/hide strip animation
+ *  11. Tauri `invoke` wrapper (holds closure-scoped COMMAND_TOKEN)
+ *  12. Button handlers (pin, bookmark, navigation, opacity, settings, etc.)
+ *  13. URL tracking + recent dropdown
+ *  14. Bookmark dropdown
+ *  15. Window title observer
+ *  16. Error-page detection + auto-recovery
+ *  17. Config init + `__floatViewUpdate` Rust->JS callback
+ *  18. Tauri event listener setup (with retry for external pages)
+ *  19. Container re-prepend observer (survives SPA DOM wipes)
+ *  20. DOM-ready init polling
+ * ========================================================================== */
 (function() {
     'use strict';
 
     if (window.__floatViewInitialized) return;
     window.__floatViewInitialized = true;
+
+    // --------------------------------------------------------------------
+    // [1] Constants & utilities
+    // --------------------------------------------------------------------
 
     const DRAG_BAR_HEIGHT = 10;
     const HOTZONE_HEIGHT = 32;
@@ -26,7 +59,13 @@
     let hideTimer = null;
     let config = null;
 
-    // Track most recently interacted media element for global hotkeys
+    // --------------------------------------------------------------------
+    // [2] Media-element interaction tracking
+    // --------------------------------------------------------------------
+
+    // Track most recently interacted media element for global hotkeys.
+    // Script runs at document_created so document.body may not exist yet —
+    // defer the observer until DOM is ready.
     window.__floatViewLastMedia = null;
     (function trackMediaInteractions() {
         const updateLast = (e) => { window.__floatViewLastMedia = e.target; };
@@ -39,7 +78,6 @@
                 m.addEventListener('click', updateLast, { passive: true });
             }
         };
-        document.querySelectorAll('video, audio').forEach(attach);
         const observer = new MutationObserver((mutations) => {
             mutations.forEach((m) => {
                 m.addedNodes.forEach((node) => {
@@ -50,8 +88,25 @@
                 });
             });
         });
-        if (document.body) observer.observe(document.body, { childList: true, subtree: true });
+        const start = () => {
+            document.querySelectorAll('video, audio').forEach(attach);
+            const root = document.documentElement || document.body;
+            if (root) observer.observe(root, { childList: true, subtree: true });
+        };
+        if (document.body) {
+            start();
+        } else if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', start, { once: true });
+        } else {
+            // documentElement exists even pre-body; observe it immediately so we
+            // catch the <body> insertion and any media added before DOMContentLoaded.
+            start();
+        }
     })();
+
+    // --------------------------------------------------------------------
+    // [3] Shadow DOM container + stylesheet
+    // --------------------------------------------------------------------
 
     const container = document.createElement('div');
     container.id = 'floatview-root';
@@ -907,6 +962,10 @@
     `;
     shadow.appendChild(style);
 
+    // --------------------------------------------------------------------
+    // [4] Control strip markup & icons
+    // --------------------------------------------------------------------
+
     // Persistent drag bar at top
     const dragBar = document.createElement('div');
     dragBar.className = 'drag-bar';
@@ -968,6 +1027,10 @@
     bookmarksDropdown.id = 'bookmarks-dropdown';
     shadow.appendChild(bookmarksDropdown);
 
+    // --------------------------------------------------------------------
+    // [5] Popups (snap, recent, bookmarks, context menu)
+    // --------------------------------------------------------------------
+
     const snapPopup = document.createElement('div');
     snapPopup.className = 'snap-popup';
     snapPopup.innerHTML = `
@@ -978,6 +1041,10 @@
         <button class="snap-cell" data-pos="bottom-right" title="Bottom Right" style="grid-column:3;">&#8600;</button>
     `;
     shadow.appendChild(snapPopup);
+
+    // --------------------------------------------------------------------
+    // [6] Settings modal + tutorial modal
+    // --------------------------------------------------------------------
 
     const modalOverlay = document.createElement('div');
     modalOverlay.className = 'modal-overlay';
@@ -1206,6 +1273,10 @@
     `;
     shadow.appendChild(contextMenu);
 
+    // --------------------------------------------------------------------
+    // [7] Element queries
+    // --------------------------------------------------------------------
+
     const btnBack = strip.querySelector('#btn-back');
     const btnForward = strip.querySelector('#btn-forward');
     const btnRefresh = strip.querySelector('#btn-refresh');
@@ -1222,7 +1293,10 @@
     const btnSnap = strip.querySelector('#btn-snap');
     const btnCrop = strip.querySelector('#btn-crop');
 
-    // Auto-refresh timer
+    // --------------------------------------------------------------------
+    // [8] Auto-refresh timer
+    // --------------------------------------------------------------------
+
     let autoRefreshTimer = null;
     function startAutoRefresh(minutes) {
         stopAutoRefresh();
@@ -1237,7 +1311,10 @@
         if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
     }
 
-    // Crop/zoom state
+    // --------------------------------------------------------------------
+    // [9] Crop / zoom selection + apply
+    // --------------------------------------------------------------------
+
     let cropActive = false;
     let cropOverlayEl = null;
 
@@ -1352,6 +1429,10 @@
         }, 100);
     }
 
+    // --------------------------------------------------------------------
+    // [13] URL tracking + recent dropdown
+    // --------------------------------------------------------------------
+
     function updateRecentDropdown() {
         recentDropdown.replaceChildren();
 
@@ -1380,6 +1461,10 @@
             recentDropdown.appendChild(item);
         });
     }
+
+    // --------------------------------------------------------------------
+    // [10] Show/hide strip animation
+    // --------------------------------------------------------------------
 
     function showStrip() {
         cancelHide();
@@ -1505,6 +1590,12 @@
         e.stopPropagation();
     });
 
+    // --------------------------------------------------------------------
+    // [11] Tauri `invoke` wrapper
+    // Holds the closure-scoped COMMAND_TOKEN. Never leaks to the host
+    // page because both the token and this wrapper live inside the IIFE.
+    // --------------------------------------------------------------------
+
     let tauriInvoke = null;
 
     async function invoke(cmd, args = {}) {
@@ -1529,6 +1620,10 @@
         console.warn('FloatView: Tauri IPC not available for:', cmd);
         return null;
     }
+
+    // --------------------------------------------------------------------
+    // [12] Button handlers
+    // --------------------------------------------------------------------
 
     btnPin.addEventListener('click', async () => {
         const result = await invoke('toggle_always_on_top');
@@ -1680,6 +1775,10 @@
         btnBookmark.classList.toggle('active', active);
     }
 
+    // --------------------------------------------------------------------
+    // [14] Bookmark dropdown
+    // --------------------------------------------------------------------
+
     function updateBookmarksDropdown() {
         bookmarksDropdown.replaceChildren();
         if (!config || !config.bookmarks || config.bookmarks.length === 0) {
@@ -1781,7 +1880,10 @@
         recentDropdown.classList.remove('visible');
     });
 
-    // Window title observer
+    // --------------------------------------------------------------------
+    // [15] Window title observer
+    // --------------------------------------------------------------------
+
     let _lastTitle = '';
     function updateWindowTitle() {
         const title = document.title || 'FloatView';
@@ -2125,6 +2227,10 @@
         _tutorialGoToStep(0);
     }
 
+    // --------------------------------------------------------------------
+    // [16] Error-page detection + auto-recovery
+    // --------------------------------------------------------------------
+
     function isErrorPage() {
         try {
             const text = (document.body?.innerText || '').substring(0, 2000);
@@ -2141,10 +2247,16 @@
             for (const p of patterns) {
                 if (p.test(text) || p.test(title)) matches++;
             }
-            // Require at least 2 matches, or a definitive error title plus 1 match
-            return matches >= 2 || (/^(This site can.t be reached|Can.t reach this page|Error|Http Error)/i.test(title) && matches >= 1);
+            // Require 2+ matches, or a Chrome/Edge error title + 1 match.
+            // Title patterns must be specific enough to avoid false-positives on
+            // articles about errors (e.g. "Error Handling in Rust" on a tech blog).
+            return matches >= 2 || (/^(This site can.t be reached|Can.t reach this page|No internet|DNS_PROBE_)/i.test(title) && matches >= 1);
         } catch { return false; }
     }
+
+    // --------------------------------------------------------------------
+    // [17] Config init + Rust->JS callback
+    // --------------------------------------------------------------------
 
     async function initConfig() {
         try {
@@ -2240,6 +2352,10 @@
         }
     };
 
+    // --------------------------------------------------------------------
+    // [18] Tauri event listener setup
+    // --------------------------------------------------------------------
+
     // Setup Tauri event listeners with retry for __TAURI__ availability on external pages
     let _tauriListenersReady = false;
 
@@ -2309,6 +2425,12 @@
         }, 50);
     }
 
+    // --------------------------------------------------------------------
+    // [19] Container re-prepend observer
+    // Survives SPA DOM wipes that would otherwise remove our floatview-root
+    // from the page.
+    // --------------------------------------------------------------------
+
     let _observerPending = false;
     const observer = new MutationObserver(() => {
         if (_observerPending || cropActive) return;
@@ -2321,6 +2443,10 @@
             }
         });
     });
+
+    // --------------------------------------------------------------------
+    // [20] DOM-ready init polling
+    // --------------------------------------------------------------------
 
     // Aggressive init: poll with setInterval instead of waiting for DOMContentLoaded.
     // setInterval fires even when the page is stuck loading (unlike rAF which needs paint

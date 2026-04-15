@@ -37,10 +37,20 @@ floatview/
 │   └── index.html              # Landing page (URL input)
 ├── src-tauri/
 │   ├── src/
-│   │   ├── main.rs             # Main application logic
-│   │   ├── config.rs           # Configuration types
+│   │   ├── main.rs             # Entry point, run(), RunEvent::Exit hook
+│   │   ├── state.rs            # AppState, auth, tray item mutator
+│   │   ├── config.rs           # serde config types
+│   │   ├── config_io.rs        # load/save/sanitize/shutdown pipeline
+│   │   ├── urls.rs             # normalize_url, urls_match
+│   │   ├── logging.rs          # tracing subscriber setup
+│   │   ├── injection.rs        # init-script builder + media JS + UA
+│   │   ├── window_state.rs     # geometry clamp, persist, startup restore
+│   │   ├── actions.rs          # do_* helpers (hotkeys / tray actions)
+│   │   ├── hotkeys.rs          # parse_hotkey + register_hotkeys
+│   │   ├── tray.rs             # setup_tray
+│   │   ├── commands.rs         # all #[tauri::command] handlers
+│   │   ├── browsing_data.rs    # WebView2 clear-all-data wrapper
 │   │   ├── opacity.rs          # Cross-platform opacity interop
-│   │   ├── clear_site_data.rs  # Browsing data clearing wrapper
 │   │   └── injection.js        # Shadow DOM control strip (embedded)
 │   ├── capabilities/
 │   │   └── default.json        # Tauri v2 permissions
@@ -97,30 +107,30 @@ The drag bar uses `-webkit-app-region: drag` for native WebView2 drag handling. 
 
 | Command | Purpose | File |
 |---------|---------|------|
-| `navigate` | Navigate to a URL (returns `true`) | `main.rs` |
-| `navigate_home` | Navigate to home URL (returns `true`) | `main.rs` |
-| `toggle_always_on_top` | Toggle pin state | `main.rs` |
-| `toggle_locked` | Toggle click-through | `main.rs` |
-| `set_opacity` | Set window opacity | `main.rs` |
-| `set_opacity_live` | Set opacity without persisting | `main.rs` |
-| `minimize_window` | Minimize window | `main.rs` |
-| `get_config` | Read current config | `main.rs` |
-| `update_config` | Update config fields | `main.rs` |
-| `set_url` | Set the last_url and recent list | `main.rs` |
-| `save_window_geometry` | Persist current geometry | `main.rs` |
-| `snap_window` | Snap window to corner/center | `main.rs` |
-| `open_settings` | Emit open-settings event | `main.rs` |
-| `exit_click_through` | Disable click-through mode | `main.rs` |
-| `close_window` | Close window | `main.rs` |
-| `maximize_toggle` | Maximize/unmaximize window | `main.rs` |
-| `get_version` | Get app version string | `main.rs` |
-| `check_for_updates` | Check for available updates | `main.rs` |
-| `set_window_title` | Set window title (truncated to 256 chars) | `main.rs` |
-| `add_bookmark` | Add URL to bookmarks (dedup, max 50) | `main.rs` |
-| `remove_bookmark` | Remove URL from bookmarks (fuzzy match) | `main.rs` |
-| `set_crop` | Persist crop region | `main.rs` |
-| `clear_crop` | Clear persisted crop region | `main.rs` |
-| `clear_site_data` | Clear all webview browsing data | `clear_site_data.rs` |
+| `navigate` | Navigate to a URL (returns `true`) | `commands.rs` |
+| `navigate_home` | Navigate to home URL (returns `true`) | `commands.rs` |
+| `toggle_always_on_top` | Toggle pin state | `commands.rs` |
+| `toggle_locked` | Toggle click-through | `commands.rs` |
+| `set_opacity` | Set window opacity | `commands.rs` |
+| `set_opacity_live` | Set opacity without persisting | `commands.rs` |
+| `minimize_window` | Minimize window | `commands.rs` |
+| `get_config` | Read current config | `commands.rs` |
+| `update_config` | Update config fields | `commands.rs` |
+| `set_url` | Set the last_url and recent list | `commands.rs` |
+| `save_window_geometry` | Persist current geometry | `commands.rs` |
+| `snap_window` | Snap window to corner/center | `commands.rs` |
+| `open_settings` | Emit open-settings event | `commands.rs` |
+| `exit_click_through` | Disable click-through mode | `commands.rs` |
+| `close_window` | Close window | `commands.rs` |
+| `maximize_toggle` | Maximize/unmaximize window | `commands.rs` |
+| `get_version` | Get app version string | `commands.rs` |
+| `check_for_updates` | Check for available updates | `commands.rs` |
+| `set_window_title` | Set window title (truncated to 256 chars) | `commands.rs` |
+| `add_bookmark` | Add URL to bookmarks (dedup, max 50) | `commands.rs` |
+| `remove_bookmark` | Remove URL from bookmarks (fuzzy match) | `commands.rs` |
+| `set_crop` | Persist crop region | `commands.rs` |
+| `clear_crop` | Clear persisted crop region | `commands.rs` |
+| `clear_site_data` | Clear all webview browsing data | `commands.rs` (→ `browsing_data.rs`) |
 
 All commands require an auth token (`token` param) via `authorize_command()`.
 
@@ -174,16 +184,16 @@ It is disabled on startup (since locked mode is auto-cleared for safety) and upd
 
 ### Adding a Tauri Command
 
-1. Add function with `#[tauri::command]` attribute in `main.rs`
-2. Add to `invoke_handler!` macro
+1. Add function with `#[tauri::command]` attribute in `commands.rs` (declared `pub`)
+2. Add `commands::<name>` to `generate_handler![ ... ]` in `main.rs`
 3. Call from JS via `invoke('command_name', { args })`
 
-All commands must accept a `token: String` parameter and call `authorize_command(&state, &token, "command_name")?`.
+All commands must accept a `token: String` parameter and call `authorize_command(&state, &token, "command_name")?` from the `state` module.
 
 ### Adding a Global Hotkey
 
 1. Add to `HotkeyConfig` in `config.rs`
-2. Add key code to `parse_hotkey()` in `main.rs`
+2. Add key code to the `hotkey_code_map()` table in `hotkeys.rs`
 3. Register in `register_hotkeys()` -- call a `do_*` helper directly, don't emit events
 4. Update `__floatViewUpdate()` in `injection.js` if UI sync needed
 
