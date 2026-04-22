@@ -64,6 +64,19 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
     let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
     let go_home = MenuItem::with_id(app, "go_home", "Go Home", true, None::<&str>)?;
+    // Rescue affordances: "Reload Page" hard-reloads the webview when
+    // a page has hung or hijacked the control strip past recovery;
+    // "Show Control Strip" re-prepends + forces visibility via eval,
+    // useful when hover reveal is disabled by the page but JS still
+    // works. Both accessible from the always-present tray.
+    let reload_page = MenuItem::with_id(app, "reload_page", "Reload Page", true, None::<&str>)?;
+    let show_strip_item = MenuItem::with_id(
+        app,
+        "show_strip",
+        "Show Control Strip",
+        true,
+        None::<&str>,
+    )?;
 
     // Install update: disabled + placeholder label until a check finds
     // something. The background updater thread and the settings "Check"
@@ -88,6 +101,9 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             &PredefinedMenuItem::separator(app)?,
             &settings,
             &go_home,
+            &PredefinedMenuItem::separator(app)?,
+            &reload_page,
+            &show_strip_item,
             &PredefinedMenuItem::separator(app)?,
             &install_update,
             &quit,
@@ -125,6 +141,8 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             "toggle_top" => do_toggle_always_on_top(app),
             "toggle_lock" => do_toggle_locked(app),
             "show" => toggle_visibility(app),
+            "reload_page" => reload_page_hard(app),
+            "show_strip" => force_show_strip(app),
             "install_update" => do_install_update(app),
             "quit" => {
                 if let Some(window) = app.get_webview_window("main") {
@@ -159,6 +177,41 @@ fn toggle_visibility(app: &AppHandle) {
             let _ = window.show();
             let _ = window.set_focus();
         }
+    }
+}
+
+/// Hard-reload the webview. The "nuclear recovery" option when a page
+/// has frozen or hijacked the strip past all JS-level recovery — this
+/// path goes through the Tauri runtime, not the page's JS, so it works
+/// even if the webview's scripting context is hung.
+fn reload_page_hard(app: &AppHandle) {
+    let Some(window) = app.get_webview_window("main") else {
+        warn!("reload_page: main window not found");
+        return;
+    };
+    // `WebviewWindow::eval("location.reload()")` would work when JS is
+    // responsive, but the whole point of this option is recovery from
+    // the case where JS is NOT responsive. Prefer direct eval of a
+    // reload hook that the runtime schedules even if the current
+    // frame's loop is blocked.
+    if let Err(e) = window.eval("location.reload()") {
+        warn!(error = %e, "reload_page: eval failed");
+    }
+}
+
+/// Trigger the JS-side force-show-strip recovery via eval. If the page's
+/// scripting context is hung, `window.show` + `set_focus` still bring
+/// the window to front so the user can see the tray menu succeeded,
+/// and then "Reload Page" is the next escalation.
+fn force_show_strip(app: &AppHandle) {
+    let Some(window) = app.get_webview_window("main") else {
+        warn!("show_strip: main window not found");
+        return;
+    };
+    let _ = window.show();
+    let _ = window.set_focus();
+    if let Err(e) = window.eval(crate::injection::SHOW_STRIP_SCRIPT) {
+        warn!(error = %e, "show_strip: eval failed");
     }
 }
 

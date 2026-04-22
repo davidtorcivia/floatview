@@ -96,6 +96,9 @@ pub fn sanitize_config(mut config: AppConfig) -> AppConfig {
     config.hotkeys.media_next = sanitize_hotkey(&config.hotkeys.media_next, "Alt+Shift+Right");
     config.hotkeys.media_previous =
         sanitize_hotkey(&config.hotkeys.media_previous, "Alt+Shift+Left");
+    config.hotkeys.media_mute = sanitize_hotkey(&config.hotkeys.media_mute, "Alt+Shift+M");
+    config.hotkeys.zoom_video = sanitize_hotkey(&config.hotkeys.zoom_video, "Alt+Shift+V");
+    config.hotkeys.show_strip = sanitize_hotkey(&config.hotkeys.show_strip, "Alt+Shift+S");
 
     let mut deduped_bookmarks = Vec::new();
     let mut seen_bookmarks = HashSet::new();

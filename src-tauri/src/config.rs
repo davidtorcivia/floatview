@@ -55,6 +55,29 @@ pub struct HotkeyConfig {
     pub media_play_pause: String,
     pub media_next: String,
     pub media_previous: String,
+    #[serde(default = "default_media_mute")]
+    pub media_mute: String,
+    #[serde(default = "default_zoom_video")]
+    pub zoom_video: String,
+    /// Emergency "force-show the control strip" hotkey. Always-works
+    /// escape hatch for pathological page states (SPA DOM wipes, stray
+    /// fullscreen layers, click-through left on). See also the
+    /// [`ZOOM_VIDEO_SCRIPT`](crate::injection::ZOOM_VIDEO_SCRIPT)
+    /// sibling scripts.
+    #[serde(default = "default_show_strip")]
+    pub show_strip: String,
+}
+
+fn default_media_mute() -> String {
+    "Alt+Shift+M".to_string()
+}
+
+fn default_zoom_video() -> String {
+    "Alt+Shift+V".to_string()
+}
+
+fn default_show_strip() -> String {
+    "Alt+Shift+S".to_string()
 }
 
 impl Default for HotkeyConfig {
@@ -68,6 +91,9 @@ impl Default for HotkeyConfig {
             media_play_pause: "Alt+Shift+P".to_string(),
             media_next: "Alt+Shift+Right".to_string(),
             media_previous: "Alt+Shift+Left".to_string(),
+            media_mute: default_media_mute(),
+            zoom_video: default_zoom_video(),
+            show_strip: default_show_strip(),
         }
     }
 }

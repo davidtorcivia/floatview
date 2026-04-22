@@ -14,7 +14,10 @@ use tracing::{error, warn};
 use crate::actions::{
     do_media_action, do_opacity_change, do_toggle_always_on_top, do_toggle_locked,
 };
-use crate::injection::{MEDIA_NEXT_SCRIPT, MEDIA_PLAY_PAUSE_SCRIPT, MEDIA_PREVIOUS_SCRIPT};
+use crate::injection::{
+    MEDIA_MUTE_SCRIPT, MEDIA_NEXT_SCRIPT, MEDIA_PLAY_PAUSE_SCRIPT, MEDIA_PREVIOUS_SCRIPT,
+    SHOW_STRIP_SCRIPT, ZOOM_VIDEO_SCRIPT,
+};
 use crate::state::AppState;
 
 /// Lowercased keyname → `Code` lookup. Populated lazily on first parse.
@@ -144,6 +147,21 @@ pub fn register_hotkeys(app: &AppHandle) {
     register_one(app, &hotkeys.media_previous, "media_previous", {
         let app_h = app.clone();
         move || do_media_action(&app_h, MEDIA_PREVIOUS_SCRIPT)
+    });
+
+    register_one(app, &hotkeys.media_mute, "media_mute", {
+        let app_h = app.clone();
+        move || do_media_action(&app_h, MEDIA_MUTE_SCRIPT)
+    });
+
+    register_one(app, &hotkeys.zoom_video, "zoom_video", {
+        let app_h = app.clone();
+        move || do_media_action(&app_h, ZOOM_VIDEO_SCRIPT)
+    });
+
+    register_one(app, &hotkeys.show_strip, "show_strip", {
+        let app_h = app.clone();
+        move || do_media_action(&app_h, SHOW_STRIP_SCRIPT)
     });
 }
 

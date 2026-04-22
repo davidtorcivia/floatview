@@ -75,6 +75,54 @@ pub const MEDIA_PREVIOUS_SCRIPT: &str = r#"
 })();
 "#;
 
+/// Mute/unmute all `<video>` and `<audio>` on the page. Many streaming
+/// sites have multiple sources (trailers, sidebar previews, the primary
+/// player); the user pressing mute means "silence this window," so we
+/// hit them all. If any element is currently unmuted, mute everything;
+/// otherwise unmute everything.
+pub const MEDIA_MUTE_SCRIPT: &str = r#"
+(() => {
+  const media = document.querySelectorAll('video, audio');
+  if (media.length === 0) return;
+  const anyUnmuted = Array.from(media).some((m) => !m.muted);
+  for (const m of media) m.muted = anyUnmuted;
+})();
+"#;
+
+/// Toggle zoom-to-video. Delegates to the injected control strip, where
+/// the largest-video heuristic and the ephemeral crop state live. A
+/// no-op if the strip hasn't initialized yet (e.g. hotkey pressed
+/// during a cold navigation).
+pub const ZOOM_VIDEO_SCRIPT: &str = r#"
+(() => {
+  if (typeof window.__floatViewZoomToVideo === 'function') {
+    window.__floatViewZoomToVideo();
+  }
+})();
+"#;
+
+/// Emergency recovery: force-show the control strip. Always-works
+/// escape hatch bound to a global hotkey, for when a hostile page
+/// (SPA DOM wipes, aggressive CSP, stray fullscreen layers, etc.) has
+/// left the strip stranded. Calls into the strip's own force-show
+/// function if the IIFE initialized; otherwise falls back to a brute
+/// `display:''` on `#floatview-root`, which at least lets the hotzone
+/// receive hover events on the next mouse-move even if the shadow
+/// stylesheet was never applied.
+pub const SHOW_STRIP_SCRIPT: &str = r#"
+(() => {
+  if (typeof window.__floatViewForceShowStrip === 'function') {
+    window.__floatViewForceShowStrip();
+    return;
+  }
+  const root = document.getElementById('floatview-root');
+  if (root) {
+    root.style.display = '';
+    root.style.pointerEvents = '';
+  }
+})();
+"#;
+
 /// User-Agent override. Set to Edge on Windows so Emby/Plex serve Direct Play.
 #[cfg(target_os = "windows")]
 pub const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0";

@@ -34,6 +34,51 @@
     window.__floatViewInitialized = true;
 
     // --------------------------------------------------------------------
+    // [0] Trusted Types / innerHTML safety
+    //
+    // Some hosts (YouTube, GitHub, many Google properties) ship
+    // `Content-Security-Policy: require-trusted-types-for 'script'`,
+    // which blocks every `element.innerHTML = stringValue` assignment
+    // with a TypeError. Our IIFE used to throw on its very first
+    // `strip.innerHTML = …` and die, leaving the user with no strip,
+    // no hotzone, no event listeners, no recovery affordances.
+    //
+    // Two-tier strategy:
+    // 1. Try to register a named Trusted Types policy. Works on sites
+    //    with permissive `trusted-types` directives.
+    // 2. Fall back to DOMParser, whose output document is not subject
+    //    to the current document's CSP — so its innerHTML is honored
+    //    and we can graft the parsed nodes in via replaceChildren.
+    // --------------------------------------------------------------------
+    let _ttPolicy = null;
+    if (typeof window.trustedTypes !== 'undefined' && window.trustedTypes.createPolicy) {
+        try {
+            _ttPolicy = window.trustedTypes.createPolicy('floatview', {
+                createHTML: (s) => s,
+                createScript: (s) => s,
+                createScriptURL: (s) => s,
+            });
+        } catch (_) {
+            // Named-policy creation rejected by CSP — DOMParser fallback
+            // will handle it.
+        }
+    }
+
+    function setInner(el, html) {
+        if (_ttPolicy) {
+            el.innerHTML = _ttPolicy.createHTML(html);
+            return;
+        }
+        try {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString('<!DOCTYPE html><body>' + html, 'text/html');
+            el.replaceChildren(...doc.body.childNodes);
+        } catch (e) {
+            console.warn('FloatView: setInner fallback failed', e);
+        }
+    }
+
+    // --------------------------------------------------------------------
     // [1] Constants & utilities
     // --------------------------------------------------------------------
 
@@ -222,6 +267,14 @@
 
         .btn:active {
             background: rgba(255,255,255,0.2);
+        }
+
+        /* Brief visual "nope" for feature buttons that couldn't act
+           (e.g. zoom-to-video with no detectable video). */
+        .btn.zoom-not-found {
+            background: rgba(244, 67, 54, 0.35);
+            color: #fff;
+            transition: background 0.15s ease-out, color 0.15s ease-out;
         }
 
         .url-display {
@@ -1005,11 +1058,15 @@
         forward: `<svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>`,
         bookmark: `<svg viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>`,
         bookmarkActive: `<svg viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z" fill="currentColor"/></svg>`,
+        volume: `<svg viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/><path d="M19.07 4.93a10 10 0 010 14.14"/></svg>`,
+        volumeMuted: `<svg viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>`,
+        zoomVideo: `<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><polyline points="8 9 8 12 11 12"/><polyline points="16 15 16 12 13 12"/></svg>`,
+        zoomVideoActive: `<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2" fill="currentColor" fill-opacity="0.25"/><polyline points="8 9 8 12 11 12"/><polyline points="16 15 16 12 13 12"/></svg>`,
     };
 
     const strip = document.createElement('div');
     strip.className = 'strip';
-    strip.innerHTML = `
+    setInner(strip, `
         <button class="btn" id="btn-back" title="Go Back">${icons.back}</button>
         <button class="btn" id="btn-forward" title="Go Forward">${icons.forward}</button>
         <button class="btn" id="btn-refresh" title="Refresh Page">${icons.refresh}</button>
@@ -1021,12 +1078,14 @@
         <button class="btn" id="btn-lock" title="Click-through mode (${formatKey('Alt+Shift+D')})">${icons.lock}</button>
         <button class="btn" id="btn-snap" title="Snap to corner">${icons.snap}</button>
         <button class="btn" id="btn-crop" title="Crop/Zoom region">${icons.crop}</button>
+        <button class="btn" id="btn-zoom-video" title="Zoom to video (${formatKey('Alt+Shift+V')})">${icons.zoomVideo}</button>
         <div class="divider"></div>
+        <button class="btn" id="btn-mute" title="Mute (${formatKey('Alt+Shift+M')})">${icons.volume}</button>
         <input type="range" class="opacity-slider" id="opacity-slider" min="10" max="100" value="100" title="Opacity">
         <button class="btn" id="btn-settings" title="Settings">${icons.settings}</button>
         <button class="btn" id="btn-minimize" title="Minimize">${icons.minimize}</button>
         <button class="btn" id="btn-close" title="Close">${icons.close}</button>
-    `;
+    `);
     shadow.appendChild(strip);
 
     const recentDropdown = document.createElement('div');
@@ -1045,13 +1104,13 @@
 
     const snapPopup = document.createElement('div');
     snapPopup.className = 'snap-popup';
-    snapPopup.innerHTML = `
+    setInner(snapPopup, `
         <button class="snap-cell" data-pos="top-left" title="Top Left">&#8598;</button>
         <button class="snap-cell" data-pos="center" title="Center">&#9678;</button>
         <button class="snap-cell" data-pos="top-right" title="Top Right">&#8599;</button>
         <button class="snap-cell" data-pos="bottom-left" title="Bottom Left">&#8601;</button>
         <button class="snap-cell" data-pos="bottom-right" title="Bottom Right" style="grid-column:3;">&#8600;</button>
-    `;
+    `);
     shadow.appendChild(snapPopup);
 
     // --------------------------------------------------------------------
@@ -1064,7 +1123,7 @@
 
     const settingsModal = document.createElement('div');
     settingsModal.className = 'settings-modal hidden';
-    settingsModal.innerHTML = `
+    setInner(settingsModal, `
         <button class="settings-close-btn" id="btn-close-settings-x" title="Close">${icons.close}</button>
         <div class="settings-scroll">
         <div class="settings-title">Settings</div>
@@ -1128,6 +1187,18 @@
                 <span class="settings-label">Skip Back</span>
                 <span class="settings-value" id="hotkey-previous">${formatKey('Alt+Shift+Left')}</span>
             </div>
+            <div class="settings-row">
+                <span class="settings-label">Mute</span>
+                <span class="settings-value" id="hotkey-mute">${formatKey('Alt+Shift+M')}</span>
+            </div>
+            <div class="settings-row">
+                <span class="settings-label">Zoom to Video</span>
+                <span class="settings-value" id="hotkey-zoom-video">${formatKey('Alt+Shift+V')}</span>
+            </div>
+            <div class="settings-row">
+                <span class="settings-label">Force-show Control Strip</span>
+                <span class="settings-value" id="hotkey-show-strip">${formatKey('Alt+Shift+S')}</span>
+            </div>
         </div>
 
         <div class="settings-section">
@@ -1173,12 +1244,12 @@
             <button class="settings-btn" id="btn-close-settings">Close</button>
         </div>
         </div>
-    `;
+    `);
     shadow.appendChild(settingsModal);
 
     const tutorialModal = document.createElement('div');
     tutorialModal.className = 'tutorial-modal hidden';
-    tutorialModal.innerHTML = `
+    setInner(tutorialModal, `
         <div class="tutorial-step active" data-step="0">
             <h2>Welcome to FloatView!</h2>
             <p>A floating browser that stays on top of everything. Perfect for picture-in-picture video, dashboards, chat windows, or anything you want to keep visible.</p>
@@ -1263,12 +1334,12 @@
                 <div class="tutorial-dot active"></div>
             </div>
         </div>
-    `;
+    `);
     shadow.appendChild(tutorialModal);
 
     const contextMenu = document.createElement('div');
     contextMenu.className = 'context-menu';
-    contextMenu.innerHTML = `
+    setInner(contextMenu, `
         <div class="context-menu-item" id="ctx-settings">${icons.settings}Settings</div>
         <div class="context-menu-divider"></div>
         <div class="context-menu-item" id="ctx-ontop">${icons.pin}Toggle Always on Top</div>
@@ -1282,7 +1353,7 @@
         <div class="context-menu-divider"></div>
         <div class="context-menu-item" id="ctx-minimize">${icons.minimize}Minimize</div>
         <div class="context-menu-item" id="ctx-close">${icons.close}Close</div>
-    `;
+    `);
     shadow.appendChild(contextMenu);
 
     // --------------------------------------------------------------------
@@ -1304,6 +1375,8 @@
     const btnClose = strip.querySelector('#btn-close');
     const btnSnap = strip.querySelector('#btn-snap');
     const btnCrop = strip.querySelector('#btn-crop');
+    const btnZoomVideo = strip.querySelector('#btn-zoom-video');
+    const btnMute = strip.querySelector('#btn-mute');
 
     // --------------------------------------------------------------------
     // [8] Auto-refresh timer
@@ -1379,7 +1452,18 @@
         if (cropOverlayEl) { cropOverlayEl.remove(); cropOverlayEl = null; }
     }
 
-    function applyCrop(x, y, w, h, animate) {
+    // Track whether the active crop came from the "Zoom to Video"
+    // feature. Used to keep its lifecycle ephemeral (no invoke('set_crop'))
+    // and to toggle the zoom button's active state independently from
+    // the manual-crop button.
+    let zoomVideoActive = false;
+
+    // `persist` controls whether the crop reaches the saved config.
+    // Default true preserves the historical behavior for user-initiated
+    // crops; zoom-to-video passes false so videos that move/disappear
+    // don't strand a stale crop across sessions.
+    function applyCrop(x, y, w, h, animate, persist) {
+        if (persist === undefined) persist = animate;
         // Move our container out of body so it's not affected by the transform
         if (container.parentNode === document.body) {
             document.documentElement.appendChild(container);
@@ -1401,12 +1485,16 @@
         }
         cropActive = true;
         btnCrop.classList.add('active');
-        if (animate) {
+        if (persist) {
             invoke('set_crop', { x, y, width: w, height: h });
         }
     }
 
-    function removeCrop() {
+    // `persist` controls whether to clear the persisted crop from
+    // config. Ephemeral removes (zoom-to-video unzoom) pass false so
+    // they don't wipe a manual crop the user saved earlier.
+    function removeCrop(persist) {
+        if (persist === undefined) persist = true;
         document.body.style.transition = 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)';
         document.body.style.transform = '';
         setTimeout(() => {
@@ -1419,14 +1507,318 @@
         }, 320);
         cropActive = false;
         btnCrop.classList.remove('active');
-        invoke('clear_crop');
+        if (persist) {
+            invoke('clear_crop');
+        }
     }
 
     window.addEventListener('resize', () => {
-        if (cropActive && config && config.crop) {
-            applyCrop(config.crop.x, config.crop.y, config.crop.width, config.crop.height);
+        if (cropActive && !zoomVideoActive && config && config.crop) {
+            applyCrop(config.crop.x, config.crop.y, config.crop.width, config.crop.height, false, false);
         }
     });
+
+    // Pick the largest `<video>` element with a non-zero layout area.
+    // `requireOnScreen` biases the first pass to videos the user can
+    // currently see — otherwise we'll pick the largest one anywhere in
+    // the document, which we'll then scroll into view. Ignores
+    // cross-origin iframes (we can't read their DOM).
+    function findLargestVideo(requireOnScreen) {
+        const videos = document.querySelectorAll('video');
+        let best = null;
+        let bestArea = 0;
+        for (const v of videos) {
+            const r = v.getBoundingClientRect();
+            if (r.width <= 0 || r.height <= 0) continue;
+            if (requireOnScreen) {
+                if (r.bottom <= 0 || r.top >= window.innerHeight) continue;
+                if (r.right <= 0 || r.left >= window.innerWidth) continue;
+            }
+            const area = r.width * r.height;
+            if (area > bestArea) {
+                best = v;
+                bestArea = area;
+            }
+        }
+        return best;
+    }
+
+    // Briefly flash the zoom button red so a hotkey press that didn't
+    // find a usable video still gives visible feedback.
+    let _zoomNotFoundTimer = null;
+    function flashZoomNotFound() {
+        btnZoomVideo.classList.add('zoom-not-found');
+        if (_zoomNotFoundTimer) clearTimeout(_zoomNotFoundTimer);
+        _zoomNotFoundTimer = setTimeout(() => {
+            btnZoomVideo.classList.remove('zoom-not-found');
+            _zoomNotFoundTimer = null;
+        }, 700);
+    }
+
+    // Apply the crop for a specific video. Assumes `video` is already
+    // visible in the viewport — callers handle the scroll-into-view
+    // step so the bounding rect is in its final position.
+    function applyZoomToVideoRect(video) {
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const rect = video.getBoundingClientRect();
+        const left = Math.max(0, rect.left);
+        const top = Math.max(0, rect.top);
+        const right = Math.min(vw, rect.right);
+        const bottom = Math.min(vh, rect.bottom);
+        const w = (right - left) / vw;
+        const h = (bottom - top) / vh;
+        if (w < 0.05 || h < 0.05) {
+            console.warn('FloatView: zoom-to-video target too small after scroll', { w, h });
+            flashZoomNotFound();
+            return;
+        }
+        if (w > 0.98 && h > 0.98) {
+            console.info('FloatView: zoom-to-video target already fills viewport');
+            flashZoomNotFound();
+            return;
+        }
+        const x = left / vw;
+        const y = top / vh;
+        applyCrop(x, y, w, h, true, false);
+        zoomVideoActive = true;
+        btnZoomVideo.classList.add('active');
+        setInner(btnZoomVideo, icons.zoomVideoActive);
+    }
+
+    // Wait for a smooth-scrolled element's position to stop changing,
+    // then call `cb`. Polls the bounding rect rather than relying on
+    // the `scrollend` event, which can fire on a nested scroller (not
+    // the one we're watching) or not at all if a scrollable ancestor
+    // has its own CSS scroll-behavior.
+    //
+    // Bails out after `maxWaitMs` regardless, so a page that continues
+    // to reflow indefinitely doesn't trap us.
+    function waitForScrollSettle(el, cb, maxWaitMs) {
+        const deadline = Date.now() + (maxWaitMs || 800);
+        let lastTop = el.getBoundingClientRect().top;
+        let stable = 0;
+        const tick = () => {
+            const r = el.getBoundingClientRect();
+            if (Math.abs(r.top - lastTop) < 0.5) {
+                stable++;
+                if (stable >= 3) { cb(); return; }
+            } else {
+                stable = 0;
+            }
+            lastTop = r.top;
+            if (Date.now() >= deadline) { cb(); return; }
+            requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+    }
+
+    // Guards against double-activation while the scroll-then-zoom
+    // sequence is in flight. Without this a frenzied user (or a
+    // double-fired hotkey) could start two scrolls and two crops.
+    let zoomToVideoPending = false;
+
+    // Toggle zoom-to-video. Finds the largest <video>, scrolls it into
+    // view (smooth), then animates a crop onto its bounding rect. The
+    // full sequence is: locate → smooth-scroll (~400ms) → settle →
+    // animated crop (~400ms). On toggle off, restores the user's saved
+    // manual crop (if any) so layering the two features is lossless.
+    //
+    // Prefers an on-screen video (what the user is currently looking
+    // at) but falls back to the largest one anywhere in the document,
+    // so the feature works even if the user has scrolled past the
+    // player or the player is below the fold.
+    function zoomToVideo() {
+        if (zoomToVideoPending) return;
+        if (zoomVideoActive) {
+            zoomVideoActive = false;
+            btnZoomVideo.classList.remove('active');
+            setInner(btnZoomVideo, icons.zoomVideo);
+            if (config && config.crop) {
+                const c = config.crop;
+                applyCrop(c.x, c.y, c.width, c.height, true, false);
+            } else {
+                removeCrop(false);
+            }
+            return;
+        }
+
+        let video = findLargestVideo(true);
+        if (!video) video = findLargestVideo(false);
+        if (!video) {
+            console.warn('FloatView: zoom-to-video found no <video> on page');
+            flashZoomNotFound();
+            return;
+        }
+
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const initial = video.getBoundingClientRect();
+        const offscreen =
+            initial.top < 0 || initial.bottom > vh ||
+            initial.left < 0 || initial.right > vw;
+
+        if (!offscreen) {
+            applyZoomToVideoRect(video);
+            return;
+        }
+
+        // Smooth-scroll the video to the center of the viewport, then
+        // crop once the scroll settles. The staged animation (scroll,
+        // pause, crop) reads as "the app is taking me to the video"
+        // rather than "the page just snapped."
+        zoomToVideoPending = true;
+        try {
+            video.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' });
+        } catch (_) {
+            // Old browsers: no options object → instant scroll.
+            video.scrollIntoView();
+        }
+        waitForScrollSettle(video, () => {
+            zoomToVideoPending = false;
+            applyZoomToVideoRect(video);
+        });
+    }
+
+    // Expose for Rust-side hotkey scripts (see injection.rs
+    // ZOOM_VIDEO_SCRIPT).
+    window.__floatViewZoomToVideo = zoomToVideo;
+
+    // Emergency recovery: guarantee the control strip is visible and
+    // interactive, regardless of whatever state the page has left us
+    // in. Bound to a global hotkey (default Alt+Shift+S) via
+    // injection.rs::SHOW_STRIP_SCRIPT. Pathological states this
+    // resolves: click-through mode left on, container orphaned from
+    // DOM, container hidden by `display:none`, container stranded
+    // behind a fullscreen layer.
+    window.__floatViewForceShowStrip = function() {
+        try {
+            // Un-hide the container (click-through mode's primary
+            // failure mode).
+            container.style.display = '';
+            container.style.pointerEvents = '';
+            // Re-home the container. Pick the fullscreen element if
+            // one's active (see [19]), otherwise body.
+            const home = containerHome();
+            if (home && container.parentNode !== home) {
+                home.prepend(container);
+            } else if (!container.parentNode && document.body) {
+                document.body.prepend(container);
+            }
+            // If the user is somehow still in click-through mode,
+            // release it via the IPC layer so the container's display
+            // stays visible next time.
+            if (config && config.window && config.window.locked) {
+                invoke('toggle_locked');
+            }
+            // Force the strip open. cancelHide in case a hide timer
+            // is pending.
+            cancelHide();
+            stripVisible = false; // reset then re-show
+            showStrip();
+        } catch (e) {
+            console.warn('FloatView: force-show-strip failed', e);
+        }
+    };
+
+    btnZoomVideo.addEventListener('click', zoomToVideo);
+
+    // Mute state tracking. Reflect whatever the page's media elements
+    // are doing, even if the user muted from inside the page (YouTube
+    // 'M' shortcut, Plex's own mute button, etc.). A periodic sweep
+    // plus `volumechange` listeners keep the icon in sync.
+    function anyMediaUnmuted() {
+        const media = document.querySelectorAll('video, audio');
+        if (media.length === 0) return null; // no media at all
+        for (const m of media) {
+            if (!m.muted) return true;
+        }
+        return false;
+    }
+
+    function updateMuteIcon() {
+        const state = anyMediaUnmuted();
+        if (state === null) {
+            // No media on page: show volume icon but dim the button.
+            setInner(btnMute, icons.volume);
+            btnMute.classList.remove('active');
+            btnMute.style.opacity = '0.5';
+            return;
+        }
+        btnMute.style.opacity = '';
+        if (state) {
+            setInner(btnMute, icons.volume);
+            btnMute.classList.remove('active');
+        } else {
+            setInner(btnMute, icons.volumeMuted);
+            btnMute.classList.add('active');
+        }
+    }
+
+    function toggleMuteAll() {
+        const media = document.querySelectorAll('video, audio');
+        if (media.length === 0) return;
+        const anyUnmuted = Array.from(media).some((m) => !m.muted);
+        for (const m of media) m.muted = anyUnmuted;
+        updateMuteIcon();
+    }
+
+    btnMute.addEventListener('click', toggleMuteAll);
+
+    // Attach volumechange listeners to current and future media
+    // elements so page-side mute toggles (YouTube 'M' shortcut etc.)
+    // keep the button icon in sync.
+    function attachVolumeListener(el) {
+        if (el.dataset.floatviewMuteTracked) return;
+        el.dataset.floatviewMuteTracked = '1';
+        el.addEventListener('volumechange', updateMuteIcon, { passive: true });
+    }
+
+    // Attach volumechange listeners to newly-inserted media elements
+    // so page-side mute toggles (e.g., YouTube's 'M' shortcut) keep
+    // our button icon in sync. Only calls `updateMuteIcon` when media
+    // is actually added or removed — YouTube-scale DOM churn would
+    // otherwise hammer a full-document query on every mutation batch.
+    const _muteObserver = new MutationObserver((mutations) => {
+        let mediaChanged = false;
+        for (const m of mutations) {
+            for (const node of m.addedNodes) {
+                if (node.nodeType !== 1) continue;
+                const isMedia = node.matches && (node.matches('video') || node.matches('audio'));
+                if (isMedia) {
+                    attachVolumeListener(node);
+                    mediaChanged = true;
+                }
+                if (node.querySelectorAll) {
+                    const nested = node.querySelectorAll('video, audio');
+                    if (nested.length > 0) {
+                        nested.forEach(attachVolumeListener);
+                        mediaChanged = true;
+                    }
+                }
+            }
+            if (!mediaChanged) {
+                for (const node of m.removedNodes) {
+                    if (node.nodeType !== 1) continue;
+                    if (node.matches && (node.matches('video') || node.matches('audio'))) {
+                        mediaChanged = true;
+                        break;
+                    }
+                    if (node.querySelector && node.querySelector('video, audio')) {
+                        mediaChanged = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (mediaChanged) updateMuteIcon();
+    });
+    (function startMuteObserver() {
+        const root = document.documentElement || document.body;
+        if (root) _muteObserver.observe(root, { childList: true, subtree: true });
+        document.querySelectorAll('video, audio').forEach(attachVolumeListener);
+        updateMuteIcon();
+    })();
 
     function snapFlash() {
         document.documentElement.style.transition = 'opacity 0.1s ease-out';
@@ -1515,11 +1907,11 @@
     }
 
     function updatePinIcon(isActive) {
-        btnPin.innerHTML = isActive ? icons.pinActive : icons.pin;
+        setInner(btnPin, isActive ? icons.pinActive : icons.pin);
     }
 
     function updateLockIcon(isLocked) {
-        btnLock.innerHTML = isLocked ? icons.lockActive : icons.lock;
+        setInner(btnLock, isLocked ? icons.lockActive : icons.lock);
     }
 
     dragBar.addEventListener('dblclick', () => {
@@ -1754,8 +2146,15 @@
         });
     });
 
-    // Crop button
+    // Crop button. If zoom-to-video is active, clicking the crop
+    // button first exits zoom (restoring any saved manual crop). A
+    // second click then clears the manual crop or enters selection,
+    // matching the non-zoom flow.
     btnCrop.addEventListener('click', () => {
+        if (zoomVideoActive) {
+            zoomToVideo();
+            return;
+        }
         if (cropActive) {
             removeCrop();
         } else {
@@ -1783,7 +2182,7 @@
     function updateBookmarkIcon() {
         const currentUrl = window.location.href;
         const active = isBookmarked(currentUrl);
-        btnBookmark.innerHTML = active ? icons.bookmarkActive : icons.bookmark;
+        setInner(btnBookmark, active ? icons.bookmarkActive : icons.bookmark);
         btnBookmark.classList.toggle('active', active);
     }
 
@@ -1943,6 +2342,9 @@
     const hotkeyPlayPause = settingsModal.querySelector('#hotkey-playpause');
     const hotkeyNext = settingsModal.querySelector('#hotkey-next');
     const hotkeyPrevious = settingsModal.querySelector('#hotkey-previous');
+    const hotkeyMute = settingsModal.querySelector('#hotkey-mute');
+    const hotkeyZoomVideo = settingsModal.querySelector('#hotkey-zoom-video');
+    const hotkeyShowStrip = settingsModal.querySelector('#hotkey-show-strip');
     const btnCheckUpdates = settingsModal.querySelector('#btn-check-updates');
     const updateStatus = settingsModal.querySelector('#update-status');
     const settingsVersion = settingsModal.querySelector('#settings-version');
@@ -1984,7 +2386,7 @@
             case 'busy':
                 btnCheckUpdates.disabled = true;
                 updateStatus.className = 'update-status';
-                updateStatus.innerHTML = '<span class="update-spinner"></span>' + (opts.label || 'Working…');
+                setInner(updateStatus, '<span class="update-spinner"></span>' + (opts.label || 'Working…'));
                 break;
         }
     }
@@ -2044,6 +2446,9 @@
                 hotkeyPlayPause.textContent = formatKey(config.hotkeys.media_play_pause || 'Alt+Shift+P');
                 hotkeyNext.textContent = formatKey(config.hotkeys.media_next || 'Alt+Shift+Right');
                 hotkeyPrevious.textContent = formatKey(config.hotkeys.media_previous || 'Alt+Shift+Left');
+                hotkeyMute.textContent = formatKey(config.hotkeys.media_mute || 'Alt+Shift+M');
+                hotkeyZoomVideo.textContent = formatKey(config.hotkeys.zoom_video || 'Alt+Shift+V');
+                hotkeyShowStrip.textContent = formatKey(config.hotkeys.show_strip || 'Alt+Shift+S');
             }
             settingHomeUrl.value = config.home_url || 'https://www.google.com';
             settingAutoRefresh.value = String(config.auto_refresh_minutes || 0);
@@ -2494,8 +2899,8 @@
             const done = Number(p.downloaded) || 0;
             if (total > 0) {
                 const pct = Math.floor((done / total) * 100);
-                updateStatus.innerHTML =
-                    '<span class="update-spinner"></span>Downloading ' + pct + '%';
+                setInner(updateStatus,
+                    '<span class="update-spinner"></span>Downloading ' + pct + '%');
             }
         });
 
@@ -2514,20 +2919,54 @@
     }
 
     // --------------------------------------------------------------------
-    // [19] Container re-prepend observer
-    // Survives SPA DOM wipes that would otherwise remove our floatview-root
-    // from the page.
+    // [19] Container placement: re-prepend + fullscreen reparenting
+    //
+    // Two separate concerns share a home here:
+    //
+    // (a) SPA DOM wipes can remove `#floatview-root`. A MutationObserver
+    //     on body watches for this and re-prepends.
+    //
+    // (b) When a page enters the Fullscreen API (YouTube's F key,
+    //     Plex's theater fullscreen, etc.), ONLY the fullscreen element
+    //     and its descendants are visible — z-index tricks cannot
+    //     escape this. If our container stays on body, the strip +
+    //     hotzone are invisible and the user is stuck. To avoid that,
+    //     reparent into the fullscreen element on entry and restore on
+    //     exit. Works because our container is `position: fixed` and
+    //     sizes to the viewport regardless of parent.
     // --------------------------------------------------------------------
+
+    // Who the container "belongs to" right now. Tracked so the observer
+    // below and the fullscreen listener agree on what counts as
+    // "displaced" vs. "intentional placement."
+    function containerHome() {
+        return document.fullscreenElement || document.body;
+    }
+
+    function reparentContainer() {
+        const home = containerHome();
+        if (!home) return;
+        if (container.parentNode === home) return;
+        // Crop is in the middle of transforming body; don't yank the
+        // container mid-animation. The MutationObserver will retry
+        // after the transition settles.
+        if (cropActive && home === document.body) return;
+        home.prepend(container);
+    }
+
+    document.addEventListener('fullscreenchange', reparentContainer);
 
     let _observerPending = false;
     const observer = new MutationObserver(() => {
         if (_observerPending || cropActive) return;
-        if (!document.body || document.body.contains(container)) return;
+        const home = containerHome();
+        if (!home || home.contains(container)) return;
         _observerPending = true;
         Promise.resolve().then(() => {
             _observerPending = false;
-            if (document.body && !document.body.contains(container)) {
-                document.body.prepend(container);
+            const h = containerHome();
+            if (h && !h.contains(container)) {
+                h.prepend(container);
             }
         });
     });
