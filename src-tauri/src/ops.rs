@@ -22,7 +22,7 @@ use crate::config::clamp_opacity;
 use crate::config_io::save_config;
 use crate::injection::js_navigate;
 use crate::opacity;
-use crate::state::{update_tray_exit_lock_enabled, AppState};
+use crate::state::{update_tray_always_on_top, update_tray_locked, AppState};
 use crate::urls::{normalize_url, DEFAULT_HOME_URL};
 
 /// Resolve the main webview window, returning a descriptive error instead
@@ -70,6 +70,7 @@ pub fn toggle_always_on_top<R: Runtime>(app: &AppHandle<R>) -> Result<bool, Stri
         save_config(&state, &config);
     }
 
+    update_tray_always_on_top(app, new_value);
     app.emit("always-on-top-changed", new_value)
         .map_err(|e| e.to_string())?;
     Ok(new_value)
@@ -91,41 +92,10 @@ pub fn toggle_locked<R: Runtime>(app: &AppHandle<R>) -> Result<bool, String> {
     window
         .set_ignore_cursor_events(new_value)
         .map_err(|e| e.to_string())?;
-    update_tray_exit_lock_enabled(app, new_value);
+    update_tray_locked(app, new_value);
     app.emit("locked-changed", new_value)
         .map_err(|e| e.to_string())?;
     Ok(new_value)
-}
-
-/// Force-disable click-through. Returns `true` if a change was applied,
-/// `false` if the window was already unlocked. Used by the tray's
-/// "Exit Click-Through Mode" item and the dedicated hotkey — both
-/// safety hatches for a locked, invisible window.
-pub fn exit_click_through<R: Runtime>(app: &AppHandle<R>) -> Result<bool, String> {
-    let window = main_window(app)?;
-    let state = app.state::<AppState>();
-    let changed = {
-        let mut config = state.config.lock().map_err(|e| e.to_string())?;
-        if !config.window.locked {
-            false
-        } else {
-            config.window.locked = false;
-            save_config(&state, &config);
-            true
-        }
-    };
-
-    if changed {
-        // Safety-critical: this releases the user from click-through mode.
-        // If it fails, the invisible window still eats cursor input.
-        window
-            .set_ignore_cursor_events(false)
-            .map_err(|e| e.to_string())?;
-        update_tray_exit_lock_enabled(app, false);
-        app.emit("locked-changed", false)
-            .map_err(|e| e.to_string())?;
-    }
-    Ok(changed)
 }
 
 /// Navigate to the configured home URL. Clears `last_url` first so a

@@ -260,25 +260,79 @@ pub async fn check_for_updates(
 ) -> Result<Option<UpdateInfo>, String> {
     authorize_command(&state, &token, "check_for_updates")?;
     let updater = app.updater().map_err(|e| e.to_string())?;
-    match updater.check().await {
-        Ok(Some(update)) => Ok(Some(UpdateInfo {
+    let result = match updater.check().await {
+        Ok(Some(update)) => Some(UpdateInfo {
             version: update.version.clone(),
             body: update.body.clone(),
-        })),
-        Ok(None) => Ok(None),
-        Err(e) => Err(e.to_string()),
-    }
+        }),
+        Ok(None) => None,
+        Err(e) => return Err(e.to_string()),
+    };
+    // Keep the tray label in sync with whatever the settings UI just
+    // found. The settings UI drives most "Check" clicks, but if the
+    // user then closes settings without installing, the tray still
+    // reflects availability.
+    crate::state::update_tray_update_available(&app, result.as_ref().map(|u| u.version.as_str()));
+    Ok(result)
 }
 
+/// Download + install the latest available update, emitting progress
+/// events so the settings UI can show a progress bar. On success the
+/// app restarts into the new version (via `app.restart()`).
+///
+/// Exposed to JS as a first-class command so users can drive the full
+/// flow from the settings panel instead of having to dig into the tray.
+/// Returns `Ok(false)` when no update is available — the UI shows a
+/// "You're up to date" message without an error.
 #[tauri::command]
-pub async fn exit_click_through(
+pub async fn install_update(
     app: AppHandle,
     state: tauri::State<'_, AppState>,
     token: String,
-) -> Result<(), String> {
-    authorize_command(&state, &token, "exit_click_through")?;
-    ops::exit_click_through(&app)?;
-    Ok(())
+) -> Result<bool, String> {
+    authorize_command(&state, &token, "install_update")?;
+
+    let updater = app.updater().map_err(|e| e.to_string())?;
+    let update = match updater.check().await.map_err(|e| e.to_string())? {
+        Some(u) => u,
+        None => return Ok(false),
+    };
+
+    let _ = app.emit("update-install-status", "Downloading update…");
+
+    let app_for_progress = app.clone();
+    let mut downloaded: u64 = 0;
+    let result = update
+        .download_and_install(
+            move |chunk, total| {
+                downloaded = downloaded.saturating_add(chunk as u64);
+                let payload = UpdateProgress {
+                    downloaded,
+                    total: total.unwrap_or(0),
+                };
+                let _ = app_for_progress.emit("update-progress", payload);
+            },
+            || {},
+        )
+        .await;
+
+    match result {
+        Ok(()) => {
+            let _ = app.emit("update-install-status", "Installing… restarting.");
+            app.restart();
+        }
+        Err(e) => {
+            let msg = format!("Install failed: {}", e);
+            let _ = app.emit("update-install-status", &msg);
+            Err(msg)
+        }
+    }
+}
+
+#[derive(serde::Serialize, Clone)]
+struct UpdateProgress {
+    downloaded: u64,
+    total: u64,
 }
 
 #[tauri::command]

@@ -38,14 +38,6 @@ pub fn do_toggle_locked(app: &AppHandle) {
     }
 }
 
-pub fn do_exit_click_through(app: &AppHandle) {
-    match ops::exit_click_through(app) {
-        Ok(true) => ops::eval_ui_update(app, "locked", false),
-        Ok(false) => {} // already unlocked
-        Err(e) => error!(error = %e, "do_exit_click_through failed"),
-    }
-}
-
 pub fn do_opacity_change(app: &AppHandle, delta: f64) {
     match ops::adjust_opacity(app, delta) {
         Ok(new_opacity) => ops::eval_ui_update(app, "opacity", new_opacity),

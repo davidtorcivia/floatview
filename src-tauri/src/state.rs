@@ -14,12 +14,27 @@ use tracing::{error, warn};
 
 use crate::config::AppConfig;
 
-/// Callback that flips the tray's "Exit Click-Through Mode" menu item.
-/// Stored as a closure rather than a `MenuItem<R>` so `AppState` doesn't
-/// carry a runtime parameter and stays free of Wry/webview2 types — this
-/// keeps test builds light (the webview2 import library otherwise gets
-/// pulled into any test binary that even references `AppState`).
-pub type TrayExitLockSetter = Box<dyn Fn(bool) + Send + Sync>;
+/// Callback that flips a boolean tray state (a check mark, typically).
+pub type TrayBoolSetter = Box<dyn Fn(bool) + Send + Sync>;
+
+/// Callback that updates the "Install Update" tray item. `Some(version)`
+/// enables it with the version embedded in the label; `None` disables
+/// and resets.
+pub type TrayUpdateSetter = Box<dyn Fn(Option<&str>) + Send + Sync>;
+
+/// Bundle of callbacks the tray exposes so the rest of the app can
+/// reflect state changes into the tray menu without knowing anything
+/// about Wry/muda types. Stored as closures so `AppState` stays free of
+/// runtime parameters and the webview2 import library doesn't get
+/// pulled into test binaries.
+pub struct TraySetters {
+    /// Flip the "Always on Top" check mark.
+    pub set_always_on_top: TrayBoolSetter,
+    /// Flip the "Click-Through Mode" check mark.
+    pub set_locked: TrayBoolSetter,
+    /// Update the "Install Update" item's label + enabled state.
+    pub set_update_available: TrayUpdateSetter,
+}
 
 /// Shared state held by Tauri for the life of the app.
 ///
@@ -39,10 +54,9 @@ pub struct AppState {
     /// Latched by `shutdown()`; cooperative workers (geometry auto-save)
     /// check this on each tick and exit their loops.
     pub shutdown_flag: AtomicBool,
-    /// Closure that enables/disables the tray's "Exit Click-Through
-    /// Mode" item. `None` before the tray is built, or in tests that
-    /// don't set up a tray. Populated by `tray::setup_tray`.
-    pub tray_exit_lock_setter: Mutex<Option<TrayExitLockSetter>>,
+    /// Tray menu callbacks. `None` before the tray is built, or in
+    /// tests that don't set up a tray. Populated by `tray::setup_tray`.
+    pub tray: Mutex<Option<TraySetters>>,
 }
 
 /// Constant-time token check would be nice, but this is a local IPC token
@@ -64,21 +78,35 @@ pub fn authorize_command(
     }
 }
 
-/// Enable or disable the tray's "Exit Click-Through Mode" menu item.
-///
-/// Safe to call before the tray has been built (the stored setter is
-/// `None` during early startup); the call is a silent no-op in that
-/// window. Also silently no-ops in test builds that skip tray setup.
-pub fn update_tray_exit_lock_enabled<R: Runtime>(app: &AppHandle<R>, enabled: bool) {
+/// Run `f` with the current tray setters, if any. Silently no-ops
+/// before the tray has been built (early startup), after teardown,
+/// and in test builds that skip tray setup. Logs poisoned mutex.
+fn with_tray_setters<F: FnOnce(&TraySetters)>(app: &AppHandle<impl Runtime>, f: F) {
     let state = app.state::<AppState>();
-    let guard = match state.tray_exit_lock_setter.lock() {
+    let guard = match state.tray.lock() {
         Ok(g) => g,
         Err(e) => {
-            error!("tray_exit_lock_setter mutex poisoned: {}", e);
+            error!("tray setters mutex poisoned: {}", e);
             return;
         }
     };
-    if let Some(set) = guard.as_ref() {
-        set(enabled);
+    if let Some(setters) = guard.as_ref() {
+        f(setters);
     }
+}
+
+/// Reflect an always-on-top state change into the tray's check mark.
+pub fn update_tray_always_on_top<R: Runtime>(app: &AppHandle<R>, on: bool) {
+    with_tray_setters(app, |t| (t.set_always_on_top)(on));
+}
+
+/// Reflect a click-through state change into the tray's check mark.
+pub fn update_tray_locked<R: Runtime>(app: &AppHandle<R>, locked: bool) {
+    with_tray_setters(app, |t| (t.set_locked)(locked));
+}
+
+/// Toggle the "Install Update" tray item. `Some(version)` enables and
+/// labels; `None` disables.
+pub fn update_tray_update_available<R: Runtime>(app: &AppHandle<R>, version: Option<&str>) {
+    with_tray_setters(app, |t| (t.set_update_available)(version));
 }

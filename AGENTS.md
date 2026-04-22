@@ -97,7 +97,7 @@ Rust actions (hotkeys, tray menu) execute directly in Rust, then sync JS via two
 
 ### Direct Action Helpers
 
-Hotkey and tray menu actions are executed directly in Rust via helper functions (`do_toggle_always_on_top`, `do_toggle_locked`, `do_opacity_change`, `do_exit_click_through`). This eliminates the fragile Rust->JS->Rust round-trip.
+Hotkey and tray menu actions are executed directly in Rust via helper functions (`do_toggle_always_on_top`, `do_toggle_locked`, `do_opacity_change`). This eliminates the fragile Rust->JS->Rust round-trip.
 
 ### CSS-based Window Dragging
 
@@ -122,11 +122,11 @@ The drag bar uses `-webkit-app-region: drag` for native WebView2 drag handling. 
 | `save_window_geometry` | Persist current geometry | `commands.rs` |
 | `snap_window` | Snap window to corner/center | `commands.rs` |
 | `open_settings` | Emit open-settings event | `commands.rs` |
-| `exit_click_through` | Disable click-through mode | `commands.rs` |
 | `close_window` | Close window | `commands.rs` |
 | `maximize_toggle` | Maximize/unmaximize window | `commands.rs` |
 | `get_version` | Get app version string | `commands.rs` |
 | `check_for_updates` | Check for available updates | `commands.rs` |
+| `install_update` | Download + install latest update, then restart | `commands.rs` |
 | `set_window_title` | Set window title (truncated to 256 chars) | `commands.rs` |
 | `add_bookmark` | Add URL to bookmarks (dedup, max 50) | `commands.rs` |
 | `remove_bookmark` | Remove URL from bookmarks (fuzzy match) | `commands.rs` |
@@ -176,13 +176,21 @@ pub struct AppConfig {
 
 ### Tray Menu Dynamic Updates
 
-The tray's **Exit Click-Through Mode** item is dynamically enabled/disabled to match the actual locked state. A closure setter is stored in `AppState` because `MenuItem` is generic over `Runtime`:
+The tray uses `CheckMenuItem` for **Always on Top** and **Click-Through Mode**, with check marks that mirror the current state, and a conditional **Install Update vX.Y.Z** item that's disabled until an update is available.
+
+State changes reach the tray through a bundle of closures stored on `AppState::tray`, so the rest of the codebase never imports `muda`/`CheckMenuItem` types:
 
 ```rust
-tray_exit_lock_setter: Mutex<Option<Box<dyn Fn(bool) + Send + Sync>>>
+pub struct TraySetters {
+    pub set_always_on_top: TrayBoolSetter,      // Box<dyn Fn(bool) + Send + Sync>
+    pub set_locked: TrayBoolSetter,
+    pub set_update_available: TrayUpdateSetter, // Box<dyn Fn(Option<&str>) + Send + Sync>
+}
 ```
 
-It is disabled on startup (since locked mode is auto-cleared for safety) and updated whenever locked state changes.
+`state::update_tray_*` helpers are the public façade; `ops::*` calls them after mutating config. Populated by `tray::setup_tray`; `None` in tests or during early startup, in which case updates silently no-op.
+
+The click-through check item doubles as the escape hatch — a trapped user right-clicks the tray, unchecks the box, and is freed. No separate "Exit Click-Through Mode" item is needed.
 
 ### Adding a Tauri Command
 
@@ -234,7 +242,7 @@ Key injection.js features:
 
 3. **Mutex lifetime in helpers** -- When using `app.state::<AppState>()` in block expressions, use `.lock().unwrap()` not `if let Ok(...)` to avoid lifetime issues with the State temporary.
 
-4. **Click-through mode is a trap** -- When locked, the control strip is hidden AND mouse events pass through. Users can only exit via global hotkey or tray menu. Always ensure these escape hatches work. The app auto-disables locked mode on startup for safety.
+4. **Click-through mode is a trap** -- When locked, the control strip is hidden AND mouse events pass through. Users can only exit via global hotkey or the tray's Click-Through check item (right-click tray → uncheck). The app auto-disables locked mode on startup for safety.
 
 5. **User Agent** -- Set to Edge UA string for Direct Play support with Emby/Plex. See `inject_script_on_document_created()`.
 

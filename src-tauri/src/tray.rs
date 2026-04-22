@@ -1,98 +1,110 @@
 //! System tray icon + right-click menu.
 //!
-//! Menu items are plain `MenuItem`s, not checkable, because Tauri v2's
-//! checkable items are fiddly across platforms. Each menu action either
-//! calls into `actions::do_*` (which matches the command behavior without
-//! needing a token) or handles window show/hide inline.
+//! The menu uses `CheckMenuItem`s for "Always on Top" and "Click-Through
+//! Mode" so the check mark reflects current state — the user doesn't
+//! have to open the menu, toggle, and hope. State updates from any
+//! source (strip button, hotkey, settings, tray itself) feed back here
+//! via `state::update_tray_*` helpers that call closures stashed on
+//! `AppState::tray` during setup.
 //!
-//! The tray's "Exit Click-Through Mode" item is stored on `AppState` so
-//! toggle_locked / exit_click_through can enable/disable it. It starts
-//! disabled because the startup path force-clears locked state for safety.
+//! Layout (seven items, no redundancy):
+//!
+//! ```text
+//! Show/Hide Window
+//! ─────────────────
+//! ☑ Always on Top        Alt+Shift+T
+//! ☐ Click-Through Mode   Alt+Shift+D
+//! ─────────────────
+//! Settings…
+//! Go Home
+//! ─────────────────
+//! Install Update v1.3.0      ← disabled when none available
+//! Quit
+//! ```
 
-use tauri::menu::{Menu, MenuItem};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager};
 use tracing::{error, warn};
 
 use crate::actions::{
-    do_exit_click_through, do_install_update, do_navigate_home, do_toggle_always_on_top,
-    do_toggle_locked,
+    do_install_update, do_navigate_home, do_toggle_always_on_top, do_toggle_locked,
 };
-use crate::state::AppState;
+use crate::state::{AppState, TrayBoolSetter, TrayUpdateSetter, TraySetters};
 use crate::window_state::persist_window_geometry;
 
+const INSTALL_UPDATE_IDLE_LABEL: &str = "No Updates Available";
+
 pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let settings = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
-    let go_home = MenuItem::with_id(app, "go_home", "Go Home", true, None::<&str>)?;
-    let toggle_top = MenuItem::with_id(
+    let show = MenuItem::with_id(app, "show", "Show/Hide Window", true, None::<&str>)?;
+
+    // Initial state loaded from config so the tray check marks match
+    // reality as soon as the menu is first opened.
+    let (initial_ontop, initial_locked) = match app.state::<AppState>().config.lock() {
+        Ok(c) => (c.window.always_on_top, c.window.locked),
+        Err(_) => (true, false),
+    };
+
+    let toggle_top = CheckMenuItem::with_id(
         app,
         "toggle_top",
-        "Toggle Always on Top",
+        "Always on Top",
         true,
-        None::<&str>,
+        initial_ontop,
+        Some("Alt+Shift+T"),
     )?;
-    let toggle_lock = MenuItem::with_id(
+    let toggle_lock = CheckMenuItem::with_id(
         app,
         "toggle_lock",
-        "Toggle Click-Through",
+        "Click-Through Mode",
         true,
-        None::<&str>,
+        initial_locked,
+        Some("Alt+Shift+D"),
     )?;
-    // Starts disabled: the app force-clears locked mode on startup for safety,
-    // and toggle_locked / exit_click_through update this via AppState.
-    let exit_lock = MenuItem::with_id(
-        app,
-        "exit_lock",
-        "Exit Click-Through Mode",
-        false,
-        None::<&str>,
-    )?;
-    let show = MenuItem::with_id(app, "show", "Show/Hide Window", true, None::<&str>)?;
+
+    let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
+    let go_home = MenuItem::with_id(app, "go_home", "Go Home", true, None::<&str>)?;
+
+    // Install update: disabled + placeholder label until a check finds
+    // something. The background updater thread and the settings "Check"
+    // button both route their results here.
     let install_update = MenuItem::with_id(
         app,
         "install_update",
-        "Install Available Update",
-        true,
+        INSTALL_UPDATE_IDLE_LABEL,
+        false,
         None::<&str>,
     )?;
+
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
     let menu = Menu::with_items(
         app,
         &[
-            &settings,
-            &go_home,
+            &show,
+            &PredefinedMenuItem::separator(app)?,
             &toggle_top,
             &toggle_lock,
-            &exit_lock,
-            &show,
+            &PredefinedMenuItem::separator(app)?,
+            &settings,
+            &go_home,
+            &PredefinedMenuItem::separator(app)?,
             &install_update,
             &quit,
         ],
     )?;
 
-    // Fall back to a 1x1 transparent pixel so a missing icon asset can't
-    // crash startup. Shouldn't happen in a packaged build — this is a
-    // belt-and-braces for dev/test.
+    // Install setters so state changes from elsewhere (hotkeys, strip
+    // buttons, settings, background updater) can feed back into the
+    // tray without the rest of the code touching tray/muda types.
+    install_setters(app, toggle_top.clone(), toggle_lock.clone(), install_update.clone());
+
+    // Fallback icon: a 1x1 transparent pixel so a missing asset can't
+    // crash startup in dev/test. Never hit in a packaged build.
     let icon = match app.default_window_icon().cloned() {
         Some(icon) => icon,
         None => tauri::image::Image::new_owned(vec![0, 0, 0, 0], 1, 1),
     };
-
-    {
-        let state = app.state::<AppState>();
-        let exit_lock_for_setter = exit_lock.clone();
-        let setter: crate::state::TrayExitLockSetter = Box::new(move |enabled| {
-            if let Err(e) = exit_lock_for_setter.set_enabled(enabled) {
-                warn!(enabled, "Failed to update tray exit_lock state: {}", e);
-            }
-        });
-        let lock_result = state.tray_exit_lock_setter.lock();
-        match lock_result {
-            Ok(mut guard) => *guard = Some(setter),
-            Err(e) => error!("tray_exit_lock_setter mutex poisoned during setup: {}", e),
-        }
-    }
 
     let _tray = TrayIconBuilder::with_id("main")
         .icon(icon)
@@ -112,17 +124,7 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             "go_home" => do_navigate_home(app),
             "toggle_top" => do_toggle_always_on_top(app),
             "toggle_lock" => do_toggle_locked(app),
-            "exit_lock" => do_exit_click_through(app),
-            "show" => {
-                if let Some(window) = app.get_webview_window("main") {
-                    if window.is_visible().unwrap_or(false) {
-                        let _ = window.hide();
-                    } else {
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
-                }
-            }
+            "show" => toggle_visibility(app),
             "install_update" => do_install_update(app),
             "quit" => {
                 if let Some(window) = app.get_webview_window("main") {
@@ -141,18 +143,79 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 ..
             } = event
             {
-                let app = tray.app_handle();
-                if let Some(window) = app.get_webview_window("main") {
-                    if window.is_visible().unwrap_or(false) {
-                        let _ = window.hide();
-                    } else {
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
-                }
+                toggle_visibility(tray.app_handle());
             }
         })
         .build(app)?;
 
     Ok(())
+}
+
+fn toggle_visibility(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        if window.is_visible().unwrap_or(false) {
+            let _ = window.hide();
+        } else {
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }
+}
+
+/// Build the [`TraySetters`] closures that each capture their respective
+/// menu item and install them on `AppState`. The rest of the app talks
+/// to the tray exclusively through these closures, so `tray.rs` stays
+/// the only module that knows about `CheckMenuItem`/`MenuItem`.
+fn install_setters(
+    app: &AppHandle,
+    toggle_top: CheckMenuItem<tauri::Wry>,
+    toggle_lock: CheckMenuItem<tauri::Wry>,
+    install_update: MenuItem<tauri::Wry>,
+) {
+    let top_item = toggle_top;
+    let set_always_on_top: TrayBoolSetter = Box::new(move |on| {
+        if let Err(e) = top_item.set_checked(on) {
+            warn!(on, "Failed to update tray always-on-top: {}", e);
+        }
+    });
+
+    let lock_item = toggle_lock;
+    let set_locked: TrayBoolSetter = Box::new(move |locked| {
+        if let Err(e) = lock_item.set_checked(locked) {
+            warn!(locked, "Failed to update tray locked: {}", e);
+        }
+    });
+
+    let update_item = install_update;
+    let set_update_available: TrayUpdateSetter =
+        Box::new(move |version: Option<&str>| match version {
+            Some(v) => {
+                let label = format!("Install Update v{}", v);
+                if let Err(e) = update_item.set_text(&label) {
+                    warn!(version = %v, "Failed to set tray update label: {}", e);
+                }
+                if let Err(e) = update_item.set_enabled(true) {
+                    warn!("Failed to enable tray update item: {}", e);
+                }
+            }
+            None => {
+                if let Err(e) = update_item.set_text(INSTALL_UPDATE_IDLE_LABEL) {
+                    warn!("Failed to reset tray update label: {}", e);
+                }
+                if let Err(e) = update_item.set_enabled(false) {
+                    warn!("Failed to disable tray update item: {}", e);
+                }
+            }
+        });
+
+    let setters = TraySetters {
+        set_always_on_top,
+        set_locked,
+        set_update_available,
+    };
+
+    match app.state::<AppState>().tray.lock() {
+        Ok(mut guard) => *guard = Some(setters),
+        Err(e) => error!("tray setters mutex poisoned during setup: {}", e),
+    }
 }

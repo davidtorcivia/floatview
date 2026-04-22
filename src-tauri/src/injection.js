@@ -543,6 +543,16 @@
             background: rgba(244, 67, 54, 0.35);
         }
 
+        .settings-btn.primary {
+            background: rgba(200, 140, 80, 0.35);
+            border-color: rgba(200, 140, 80, 0.6);
+            color: #fff;
+        }
+
+        .settings-btn.primary:hover {
+            background: rgba(200, 140, 80, 0.5);
+        }
+
         .settings-footer {
             margin-top: 20px;
             padding-top: 16px;
@@ -1943,24 +1953,76 @@
         if (version) settingsVersion.textContent = 'FloatView v' + version;
     })();
 
+    // Stateful update button. Three modes:
+    //   'check'    — "Check for Updates", fires check_for_updates
+    //   'install'  — "Install vX.Y.Z", fires install_update (triggers
+    //                download + install + restart)
+    //   'busy'     — disabled + spinner, set during RPC calls
+    // The background 24h check can also set the button into 'install'
+    // mode via the update-available event listener below.
+    let _updateMode = 'check';
+    let _availableVersion = null;
+
+    function setUpdateMode(mode, opts = {}) {
+        _updateMode = mode;
+        switch (mode) {
+            case 'check':
+                btnCheckUpdates.disabled = false;
+                btnCheckUpdates.textContent = 'Check for Updates';
+                btnCheckUpdates.classList.remove('primary');
+                updateStatus.className = 'update-status';
+                updateStatus.textContent = opts.message || '';
+                break;
+            case 'install':
+                _availableVersion = opts.version;
+                btnCheckUpdates.disabled = false;
+                btnCheckUpdates.textContent = 'Install v' + opts.version;
+                btnCheckUpdates.classList.add('primary');
+                updateStatus.className = 'update-status available';
+                updateStatus.textContent = opts.message || ('v' + opts.version + ' available');
+                break;
+            case 'busy':
+                btnCheckUpdates.disabled = true;
+                updateStatus.className = 'update-status';
+                updateStatus.innerHTML = '<span class="update-spinner"></span>' + (opts.label || 'Working…');
+                break;
+        }
+    }
+
     btnCheckUpdates.addEventListener('click', async () => {
-        btnCheckUpdates.disabled = true;
-        updateStatus.className = 'update-status';
-        updateStatus.innerHTML = '<span class="update-spinner"></span>Checking...';
+        if (_updateMode === 'install') {
+            // Already know an update is available — kick off install.
+            setUpdateMode('busy', { label: 'Downloading…' });
+            try {
+                const ok = await invoke('install_update');
+                if (ok === false) {
+                    // Raced: the update disappeared between our last
+                    // check and this click. Drop back to check mode.
+                    setUpdateMode('check', { message: 'You\'re up to date!' });
+                }
+                // If ok === true the app is about to restart; no
+                // need to touch the UI further.
+            } catch (e) {
+                setUpdateMode('check');
+                updateStatus.className = 'update-status error';
+                updateStatus.textContent = 'Install failed: ' + e;
+            }
+            return;
+        }
+
+        // 'check' mode: run a fresh check.
+        setUpdateMode('busy', { label: 'Checking…' });
         try {
             const result = await invoke('check_for_updates');
             if (result) {
-                updateStatus.className = 'update-status available';
-                updateStatus.textContent = 'v' + result.version + ' available. Install from tray menu.';
+                setUpdateMode('install', { version: result.version });
             } else {
-                updateStatus.className = 'update-status';
-                updateStatus.textContent = 'You\'re up to date!';
+                setUpdateMode('check', { message: 'You\'re up to date!' });
             }
         } catch (e) {
+            setUpdateMode('check');
             updateStatus.className = 'update-status error';
             updateStatus.textContent = 'Check failed: ' + e;
-        } finally {
-            btnCheckUpdates.disabled = false;
         }
     });
 
@@ -2411,6 +2473,30 @@
                 ? 'update-status error'
                 : 'update-status';
             updateStatus.textContent = message;
+        });
+
+        // Background 24h checker fires this when it finds an update.
+        // Flip the settings button into Install mode so the user can
+        // kick off install without re-running a check first.
+        listen('update-available', (event) => {
+            const payload = event.payload || {};
+            if (payload.version) {
+                setUpdateMode('install', { version: String(payload.version) });
+            }
+        });
+
+        // Progress updates during install. Only meaningful when the
+        // settings modal is open and we're in 'busy' mode.
+        listen('update-progress', (event) => {
+            if (_updateMode !== 'busy') return;
+            const p = event.payload || {};
+            const total = Number(p.total) || 0;
+            const done = Number(p.downloaded) || 0;
+            if (total > 0) {
+                const pct = Math.floor((done / total) * 100);
+                updateStatus.innerHTML =
+                    '<span class="update-spinner"></span>Downloading ' + pct + '%';
+            }
         });
 
         _tauriListenersReady = true;

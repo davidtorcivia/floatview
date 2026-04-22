@@ -25,7 +25,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
-use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
@@ -97,7 +97,7 @@ pub fn run() {
                 save_tx: Mutex::new(Some(save_tx)),
                 save_thread: Mutex::new(Some(save_thread)),
                 shutdown_flag: AtomicBool::new(false),
-                tray_exit_lock_setter: Mutex::new(None),
+                tray: Mutex::new(None),
             };
             app.manage(state);
 
@@ -164,6 +164,55 @@ pub fn run() {
             hotkeys::register_hotkeys(app.handle());
             tray::setup_tray(app.handle())?;
 
+            // Background update check. Runs on startup after a small
+            // grace period so it doesn't fight the webview for network
+            // or compete with the initial page load, then repeats every
+            // 24 hours. Surfaces availability to both the tray item and
+            // an `update-available` event that the settings UI listens
+            // for, so the user can install without hunting for the
+            // "Check" button.
+            let app_for_updates = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                use tauri_plugin_updater::UpdaterExt;
+                const STARTUP_DELAY: Duration = Duration::from_secs(30);
+                const RECHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
+                tokio::time::sleep(STARTUP_DELAY).await;
+                loop {
+                    if app_for_updates
+                        .state::<AppState>()
+                        .shutdown_flag
+                        .load(Ordering::Acquire)
+                    {
+                        return;
+                    }
+                    match app_for_updates.updater() {
+                        Ok(updater) => match updater.check().await {
+                            Ok(Some(update)) => {
+                                let version = update.version.clone();
+                                info!(version = %version, "Background check: update available");
+                                crate::state::update_tray_update_available(
+                                    &app_for_updates,
+                                    Some(&version),
+                                );
+                                let payload = serde_json::json!({
+                                    "version": version,
+                                    "body": update.body.clone(),
+                                });
+                                let _ = app_for_updates.emit("update-available", payload);
+                            }
+                            Ok(None) => {
+                                crate::state::update_tray_update_available(&app_for_updates, None);
+                            }
+                            Err(e) => {
+                                warn!("Background update check failed: {}", e);
+                            }
+                        },
+                        Err(e) => warn!("Background updater unavailable: {}", e),
+                    }
+                    tokio::time::sleep(RECHECK_INTERVAL).await;
+                }
+            });
+
             // Periodic geometry auto-save. Wakes every second so shutdown
             // can interrupt promptly; only persists every 30 ticks so disk
             // churn matches the old behavior.
@@ -206,12 +255,12 @@ pub fn run() {
             commands::save_window_geometry,
             commands::snap_window,
             commands::open_settings,
-            commands::exit_click_through,
             commands::minimize_window,
             commands::close_window,
             commands::maximize_toggle,
             commands::get_version,
             commands::check_for_updates,
+            commands::install_update,
             commands::set_window_title,
             commands::add_bookmark,
             commands::remove_bookmark,
@@ -355,7 +404,7 @@ mod lifecycle_tests {
                 save_tx: Mutex::new(Some(save_tx)),
                 save_thread: Mutex::new(Some(save_thread)),
                 shutdown_flag: AtomicBool::new(false),
-                tray_exit_lock_setter: Mutex::new(None),
+                tray: Mutex::new(None),
             };
 
             StateFixture { state, temp }
