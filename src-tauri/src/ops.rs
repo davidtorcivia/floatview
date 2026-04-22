@@ -16,7 +16,7 @@
 //! on top without re-implementing the pipeline.
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewWindow};
 
 use crate::config::clamp_opacity;
 use crate::config_io::save_config;
@@ -27,7 +27,7 @@ use crate::urls::{normalize_url, DEFAULT_HOME_URL};
 
 /// Resolve the main webview window, returning a descriptive error instead
 /// of `None` so callers can propagate the failure upward uniformly.
-pub fn main_window(app: &AppHandle) -> Result<WebviewWindow, String> {
+pub fn main_window<R: Runtime>(app: &AppHandle<R>) -> Result<WebviewWindow<R>, String> {
     app.get_webview_window("main")
         .ok_or_else(|| "main window not found".to_string())
 }
@@ -40,7 +40,7 @@ pub fn main_window(app: &AppHandle) -> Result<WebviewWindow, String> {
 ///
 /// Both `key` and `value` are JSON-encoded, so the key string is part of
 /// the trust boundary; only pass compile-time constants.
-pub fn eval_ui_update<T: Serialize>(app: &AppHandle, key: &'static str, value: T) {
+pub fn eval_ui_update<R: Runtime, T: Serialize>(app: &AppHandle<R>, key: &'static str, value: T) {
     let Some(window) = app.get_webview_window("main") else {
         return;
     };
@@ -55,7 +55,7 @@ pub fn eval_ui_update<T: Serialize>(app: &AppHandle, key: &'static str, value: T
 /// Flip always-on-top. Source of truth is the OS (the window may have been
 /// un-topped by external means), so we read `is_always_on_top` rather than
 /// trusting config.
-pub fn toggle_always_on_top(app: &AppHandle) -> Result<bool, String> {
+pub fn toggle_always_on_top<R: Runtime>(app: &AppHandle<R>) -> Result<bool, String> {
     let window = main_window(app)?;
     let current = window.is_always_on_top().map_err(|e| e.to_string())?;
     let new_value = !current;
@@ -77,7 +77,7 @@ pub fn toggle_always_on_top(app: &AppHandle) -> Result<bool, String> {
 
 /// Flip click-through (locked) mode. Source of truth is config, because the
 /// OS-level `set_ignore_cursor_events` has no reliable read-back.
-pub fn toggle_locked(app: &AppHandle) -> Result<bool, String> {
+pub fn toggle_locked<R: Runtime>(app: &AppHandle<R>) -> Result<bool, String> {
     let window = main_window(app)?;
     let state = app.state::<AppState>();
     let new_value = {
@@ -101,7 +101,7 @@ pub fn toggle_locked(app: &AppHandle) -> Result<bool, String> {
 /// `false` if the window was already unlocked. Used by the tray's
 /// "Exit Click-Through Mode" item and the dedicated hotkey — both
 /// safety hatches for a locked, invisible window.
-pub fn exit_click_through(app: &AppHandle) -> Result<bool, String> {
+pub fn exit_click_through<R: Runtime>(app: &AppHandle<R>) -> Result<bool, String> {
     let window = main_window(app)?;
     let state = app.state::<AppState>();
     let changed = {
@@ -130,7 +130,7 @@ pub fn exit_click_through(app: &AppHandle) -> Result<bool, String> {
 
 /// Navigate to the configured home URL. Clears `last_url` first so a
 /// subsequent app restart lands on home, not on the prior page.
-pub fn navigate_home(app: &AppHandle) -> Result<(), String> {
+pub fn navigate_home<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let window = main_window(app)?;
     let state = app.state::<AppState>();
     let home_url = {
@@ -149,7 +149,7 @@ pub fn navigate_home(app: &AppHandle) -> Result<(), String> {
 
 /// Apply an absolute opacity value (clamped). Returns the effective value
 /// after clamping, which callers can forward to JS.
-pub fn set_opacity(app: &AppHandle, opacity: f64) -> Result<f64, String> {
+pub fn set_opacity<R: Runtime>(app: &AppHandle<R>, opacity: f64) -> Result<f64, String> {
     let opacity = clamp_opacity(opacity);
     let window = main_window(app)?;
     opacity::set_window_opacity(&window, opacity);
@@ -168,7 +168,7 @@ pub fn set_opacity(app: &AppHandle, opacity: f64) -> Result<f64, String> {
 
 /// Adjust opacity by a delta. Reads the current value from config (the
 /// OS-level opacity is not reliably readable on Windows).
-pub fn adjust_opacity(app: &AppHandle, delta: f64) -> Result<f64, String> {
+pub fn adjust_opacity<R: Runtime>(app: &AppHandle<R>, delta: f64) -> Result<f64, String> {
     let current = {
         let state = app.state::<AppState>();
         let config = state.config.lock().map_err(|e| e.to_string())?;

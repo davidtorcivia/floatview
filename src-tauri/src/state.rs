@@ -9,11 +9,17 @@ use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::Sender;
 use std::sync::Mutex;
 use std::thread::JoinHandle;
-use tauri::menu::MenuItem;
-use tauri::{AppHandle, Manager, Wry};
+use tauri::{AppHandle, Manager, Runtime};
 use tracing::{error, warn};
 
 use crate::config::AppConfig;
+
+/// Callback that flips the tray's "Exit Click-Through Mode" menu item.
+/// Stored as a closure rather than a `MenuItem<R>` so `AppState` doesn't
+/// carry a runtime parameter and stays free of Wry/webview2 types — this
+/// keeps test builds light (the webview2 import library otherwise gets
+/// pulled into any test binary that even references `AppState`).
+pub type TrayExitLockSetter = Box<dyn Fn(bool) + Send + Sync>;
 
 /// Shared state held by Tauri for the life of the app.
 ///
@@ -33,9 +39,10 @@ pub struct AppState {
     /// Latched by `shutdown()`; cooperative workers (geometry auto-save)
     /// check this on each tick and exit their loops.
     pub shutdown_flag: AtomicBool,
-    /// Tray "Exit Click-Through Mode" item. Stored so toggle_locked and
-    /// exit_click_through can enable/disable it. Populated by `tray::setup`.
-    pub tray_exit_lock_item: Mutex<Option<MenuItem<Wry>>>,
+    /// Closure that enables/disables the tray's "Exit Click-Through
+    /// Mode" item. `None` before the tray is built, or in tests that
+    /// don't set up a tray. Populated by `tray::setup_tray`.
+    pub tray_exit_lock_setter: Mutex<Option<TrayExitLockSetter>>,
 }
 
 /// Constant-time token check would be nice, but this is a local IPC token
@@ -59,20 +66,19 @@ pub fn authorize_command(
 
 /// Enable or disable the tray's "Exit Click-Through Mode" menu item.
 ///
-/// Safe to call before the tray has been built (the stored item is `None`
-/// during early startup); the call is a silent no-op in that window.
-pub fn update_tray_exit_lock_enabled(app: &AppHandle, enabled: bool) {
+/// Safe to call before the tray has been built (the stored setter is
+/// `None` during early startup); the call is a silent no-op in that
+/// window. Also silently no-ops in test builds that skip tray setup.
+pub fn update_tray_exit_lock_enabled<R: Runtime>(app: &AppHandle<R>, enabled: bool) {
     let state = app.state::<AppState>();
-    let guard = match state.tray_exit_lock_item.lock() {
+    let guard = match state.tray_exit_lock_setter.lock() {
         Ok(g) => g,
         Err(e) => {
-            error!("tray_exit_lock_item mutex poisoned: {}", e);
+            error!("tray_exit_lock_setter mutex poisoned: {}", e);
             return;
         }
     };
-    if let Some(item) = guard.as_ref() {
-        if let Err(e) = item.set_enabled(enabled) {
-            warn!(enabled, "Failed to update tray exit_lock state: {}", e);
-        }
+    if let Some(set) = guard.as_ref() {
+        set(enabled);
     }
 }

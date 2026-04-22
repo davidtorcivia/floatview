@@ -37,15 +37,17 @@ floatview/
 │   └── index.html              # Landing page (URL input)
 ├── src-tauri/
 │   ├── src/
-│   │   ├── main.rs             # Entry point, run(), RunEvent::Exit hook
-│   │   ├── state.rs            # AppState, auth, tray item mutator
-│   │   ├── config.rs           # serde config types
+│   │   ├── main.rs             # Binary shim; just calls `floatview::run()`
+│   │   ├── lib.rs              # run(), RunEvent::Exit hook, lifecycle integration tests
+│   │   ├── state.rs            # AppState, auth, tray setter
+│   │   ├── config.rs           # serde config types, clamp_opacity
 │   │   ├── config_io.rs        # load/save/sanitize/shutdown pipeline
 │   │   ├── urls.rs             # normalize_url, urls_match
 │   │   ├── logging.rs          # tracing subscriber setup
-│   │   ├── injection.rs        # init-script builder + media JS + UA
+│   │   ├── injection.rs        # init-script builder + js_navigate + media JS + UA
 │   │   ├── window_state.rs     # geometry clamp, persist, startup restore
-│   │   ├── actions.rs          # do_* helpers (hotkeys / tray actions)
+│   │   ├── ops.rs              # strict toggle/opacity/navigate core
+│   │   ├── actions.rs          # do_* best-effort wrappers over ops
 │   │   ├── hotkeys.rs          # parse_hotkey + register_hotkeys
 │   │   ├── tray.rs             # setup_tray
 │   │   ├── commands.rs         # all #[tauri::command] handlers
@@ -185,7 +187,7 @@ It is disabled on startup (since locked mode is auto-cleared for safety) and upd
 ### Adding a Tauri Command
 
 1. Add function with `#[tauri::command]` attribute in `commands.rs` (declared `pub`)
-2. Add `commands::<name>` to `generate_handler![ ... ]` in `main.rs`
+2. Add `commands::<name>` to `generate_handler![ ... ]` in `lib.rs`
 3. Call from JS via `invoke('command_name', { args })`
 
 All commands must accept a `token: String` parameter and call `authorize_command(&state, &token, "command_name")?` from the `state` module.
