@@ -12,7 +12,9 @@
 //! - [`window_state`]: geometry clamping, persistence, startup restore
 //! - [`browsing_data`]: thin wrapper around WebView2 clear-all-data
 //! - [`opacity`]     : per-platform opacity native interop
-//! - [`actions`]     : direct-action helpers (hotkeys / tray)
+//! - [`ops`]         : strict toggle / opacity / navigate core shared by
+//!   commands and direct actions
+//! - [`actions`]     : best-effort wrappers around `ops` for hotkeys / tray
 //! - [`hotkeys`]     : hotkey parsing + global-shortcut registration
 //! - [`commands`]    : all `#[tauri::command]` handlers
 //! - [`tray`]        : tray icon + menu
@@ -36,6 +38,7 @@ mod hotkeys;
 mod injection;
 mod logging;
 mod opacity;
+mod ops;
 mod state;
 mod tray;
 mod urls;

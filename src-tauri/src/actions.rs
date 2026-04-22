@@ -1,160 +1,55 @@
-//! Direct-action helpers invoked from the tray menu and global hotkeys.
+//! Best-effort wrappers around [`crate::ops`] for the tray menu and global
+//! hotkeys. Each `do_*` calls the strict operation, then:
 //!
-//! These bypass the JS command bus — they mutate state in Rust, call the
-//! native window API directly, and emit events to the webview so the
-//! control strip stays in sync. They match the behavior of their
-//! `#[tauri::command]` siblings but are callable without a token.
+//! - On success, emits a `__floatViewUpdate(key, value)` eval so the
+//!   injected control strip reflects the new state even when its
+//!   event-bus listeners haven't attached yet (common on external pages).
+//! - On failure, logs at `warn`/`error` and continues. Hotkey/tray
+//!   callers have no useful error channel to propagate into.
 
 use tauri::{AppHandle, Emitter, Manager};
-use tracing::{error, info, warn};
 use tauri_plugin_updater::UpdaterExt;
+use tracing::{error, info, warn};
 
-use crate::config::clamp_opacity;
-use crate::config_io::save_config;
-use crate::injection::js_navigate;
-use crate::opacity;
-use crate::state::{update_tray_exit_lock_enabled, AppState};
-use crate::urls::{normalize_url, DEFAULT_HOME_URL};
+use crate::ops;
 
 pub fn do_navigate_home(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
-        let state = app.state::<AppState>();
-        let home_url = if let Ok(mut config) = state.config.lock() {
-            config.last_url = None;
-            save_config(&state, &config);
-            normalize_url(&config.home_url).unwrap_or_else(|_| DEFAULT_HOME_URL.to_string())
-        } else {
-            DEFAULT_HOME_URL.to_string()
-        };
-        let _ = window.eval("window.stop()");
-        let _ = window.eval(js_navigate(&home_url));
+    if let Err(e) = ops::navigate_home(app) {
+        warn!(error = %e, "do_navigate_home failed");
     }
 }
 
 pub fn do_toggle_always_on_top(app: &AppHandle) {
-    let Some(window) = app.get_webview_window("main") else {
-        warn!("do_toggle_always_on_top: main window not found");
-        return;
-    };
-    let current = window.is_always_on_top().unwrap_or(false);
-    let new_value = !current;
-    if let Err(e) = window.set_always_on_top(new_value) {
-        warn!(error = %e, new_value, "set_always_on_top failed");
+    match ops::toggle_always_on_top(app) {
+        Ok(new_value) => ops::eval_ui_update(app, "always_on_top", new_value),
+        Err(e) => warn!(error = %e, "do_toggle_always_on_top failed"),
     }
-
-    let state = app.state::<AppState>();
-    if let Ok(mut config) = state.config.lock() {
-        config.window.always_on_top = new_value;
-        save_config(&state, &config);
-    }
-
-    if let Err(e) = app.emit("always-on-top-changed", new_value) {
-        warn!(error = %e, "failed to emit always-on-top-changed");
-    }
-    let _ = window.eval(format!(
-        "if(window.__floatViewUpdate) window.__floatViewUpdate('always_on_top', {})",
-        new_value
-    ));
 }
 
 pub fn do_toggle_locked(app: &AppHandle) {
-    let Some(window) = app.get_webview_window("main") else {
-        warn!("do_toggle_locked: main window not found");
-        return;
-    };
-    let new_value = {
-        let state = app.state::<AppState>();
-        let mut config = match state.config.lock() {
-            Ok(config) => config,
-            Err(e) => {
-                error!("Failed to lock config in do_toggle_locked: {}", e);
-                return;
-            }
-        };
-        let nv = !config.window.locked;
-        config.window.locked = nv;
-        save_config(&state, &config);
-        nv
-    };
-
-    if let Err(e) = window.set_ignore_cursor_events(new_value) {
-        // If this fails while enabling lock, the user's click-through request
-        // silently no-ops, which is confusing but not dangerous. If it fails
-        // while disabling lock, the user is trapped behind an invisible window
-        // — that's a significant UX failure worth a loud log line.
-        error!(error = %e, new_value, "set_ignore_cursor_events failed");
+    match ops::toggle_locked(app) {
+        Ok(new_value) => ops::eval_ui_update(app, "locked", new_value),
+        // Safety-critical path: if this fails while *enabling* lock the
+        // user's click-through request silently no-ops (confusing, not
+        // dangerous). If it fails while *disabling* lock, the user is
+        // trapped behind an invisible window — loud log so it's
+        // impossible to miss when debugging a stuck session.
+        Err(e) => error!(error = %e, "do_toggle_locked failed"),
     }
-
-    update_tray_exit_lock_enabled(app, new_value);
-
-    if let Err(e) = app.emit("locked-changed", new_value) {
-        warn!(error = %e, "failed to emit locked-changed");
-    }
-    let _ = window.eval(format!(
-        "if(window.__floatViewUpdate) window.__floatViewUpdate('locked', {})",
-        new_value
-    ));
 }
 
 pub fn do_exit_click_through(app: &AppHandle) {
-    let Some(window) = app.get_webview_window("main") else {
-        warn!("do_exit_click_through: main window not found");
-        return;
-    };
-
-    let state = app.state::<AppState>();
-    let mut config = match state.config.lock() {
-        Ok(config) => config,
-        Err(e) => {
-            error!("Failed to lock config in do_exit_click_through: {}", e);
-            return;
-        }
-    };
-    if !config.window.locked {
-        return;
+    match ops::exit_click_through(app) {
+        Ok(true) => ops::eval_ui_update(app, "locked", false),
+        Ok(false) => {} // already unlocked
+        Err(e) => error!(error = %e, "do_exit_click_through failed"),
     }
-    config.window.locked = false;
-    save_config(&state, &config);
-    drop(config);
-
-    // Safety-critical: this releases the user from click-through mode. If it
-    // fails, the invisible window still eats all cursor input. Log at error
-    // level so it's impossible to miss when debugging a stuck session.
-    if let Err(e) = window.set_ignore_cursor_events(false) {
-        error!(error = %e, "failed to disable click-through from exit hotkey");
-    }
-    update_tray_exit_lock_enabled(app, false);
-
-    if let Err(e) = app.emit("locked-changed", false) {
-        warn!(error = %e, "failed to emit locked-changed");
-    }
-    let _ = window.eval("if(window.__floatViewUpdate) window.__floatViewUpdate('locked', false)");
 }
 
 pub fn do_opacity_change(app: &AppHandle, delta: f64) {
-    if let Some(window) = app.get_webview_window("main") {
-        let new_opacity = {
-            let state = app.state::<AppState>();
-            let mut config = match state.config.lock() {
-                Ok(config) => config,
-                Err(e) => {
-                    error!("Failed to lock config in do_opacity_change: {}", e);
-                    return;
-                }
-            };
-            let op = clamp_opacity(config.window.opacity + delta);
-            config.window.opacity = op;
-            save_config(&state, &config);
-            op
-        };
-
-        opacity::set_window_opacity(&window, new_opacity);
-
-        let _ = app.emit("opacity-changed", new_opacity);
-        let _ = window.eval(format!(
-            "if(window.__floatViewUpdate) window.__floatViewUpdate('opacity', {})",
-            new_opacity
-        ));
+    match ops::adjust_opacity(app, delta) {
+        Ok(new_opacity) => ops::eval_ui_update(app, "opacity", new_opacity),
+        Err(e) => warn!(error = %e, "do_opacity_change failed"),
     }
 }
 

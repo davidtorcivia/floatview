@@ -12,8 +12,9 @@ use crate::config::{clamp_opacity, AppConfig, CropConfig};
 use crate::config_io::{persist_recent_url, sanitize_config, save_config, CROP_MIN_DIM};
 use crate::injection::js_navigate;
 use crate::opacity;
-use crate::state::{authorize_command, update_tray_exit_lock_enabled, AppState};
-use crate::urls::{normalize_url, urls_match, DEFAULT_HOME_URL};
+use crate::ops;
+use crate::state::{authorize_command, AppState};
+use crate::urls::{normalize_url, urls_match};
 use crate::window_state::persist_window_geometry;
 
 #[tauri::command]
@@ -64,67 +65,34 @@ pub async fn navigate(
 
 #[tauri::command]
 pub async fn navigate_home(
-    window: WebviewWindow,
+    app: AppHandle,
     state: tauri::State<'_, AppState>,
     token: String,
 ) -> Result<bool, String> {
     authorize_command(&state, &token, "navigate_home")?;
-    let home_url = {
-        let mut config = state.config.lock().map_err(|e| e.to_string())?;
-        config.last_url = None;
-        save_config(&state, &config);
-        normalize_url(&config.home_url).unwrap_or_else(|_| DEFAULT_HOME_URL.to_string())
-    };
-    let _ = window.eval("window.stop()");
-    window
-        .eval(js_navigate(&home_url))
-        .map_err(|e| e.to_string())?;
+    ops::navigate_home(&app)?;
     Ok(true)
 }
 
 #[tauri::command]
 pub async fn toggle_always_on_top(
     app: AppHandle,
-    window: WebviewWindow,
     state: tauri::State<'_, AppState>,
     token: String,
 ) -> Result<bool, String> {
     authorize_command(&state, &token, "toggle_always_on_top")?;
-    let current = window.is_always_on_top().map_err(|e| e.to_string())?;
-    let new_value = !current;
-    window
-        .set_always_on_top(new_value)
-        .map_err(|e| e.to_string())?;
-
-    let mut config = state.config.lock().map_err(|e| e.to_string())?;
-    config.window.always_on_top = new_value;
-    save_config(&state, &config);
-    drop(config);
-
-    app.emit("always-on-top-changed", new_value)
-        .map_err(|e| e.to_string())?;
-    Ok(new_value)
+    ops::toggle_always_on_top(&app)
 }
 
 #[tauri::command]
 pub async fn set_opacity(
     app: AppHandle,
-    window: WebviewWindow,
     state: tauri::State<'_, AppState>,
     opacity: f64,
     token: String,
 ) -> Result<(), String> {
     authorize_command(&state, &token, "set_opacity")?;
-    let opacity = clamp_opacity(opacity);
-    opacity::set_window_opacity(&window, opacity);
-
-    let mut config = state.config.lock().map_err(|e| e.to_string())?;
-    config.window.opacity = opacity;
-    save_config(&state, &config);
-    drop(config);
-
-    app.emit("opacity-changed", opacity)
-        .map_err(|e| e.to_string())?;
+    ops::set_opacity(&app, opacity)?;
     Ok(())
 }
 
@@ -135,6 +103,9 @@ pub async fn set_opacity_live(
     opacity: f64,
     token: String,
 ) -> Result<(), String> {
+    // Intentionally skips persistence and the `opacity-changed` emit: this
+    // is the slider-drag path, throttled from JS at ~30 Hz. Persist/emit
+    // happens on `change` via `set_opacity`.
     authorize_command(&state, &token, "set_opacity_live")?;
     let opacity = clamp_opacity(opacity);
     opacity::set_window_opacity(&window, opacity);
@@ -144,29 +115,11 @@ pub async fn set_opacity_live(
 #[tauri::command]
 pub async fn toggle_locked(
     app: AppHandle,
-    window: WebviewWindow,
     state: tauri::State<'_, AppState>,
     token: String,
 ) -> Result<bool, String> {
     authorize_command(&state, &token, "toggle_locked")?;
-    let new_value = {
-        let mut config = state.config.lock().map_err(|e| e.to_string())?;
-        let new_value = !config.window.locked;
-        config.window.locked = new_value;
-        save_config(&state, &config);
-        drop(config);
-        new_value
-    };
-
-    window
-        .set_ignore_cursor_events(new_value)
-        .map_err(|e| e.to_string())?;
-
-    update_tray_exit_lock_enabled(&app, new_value);
-
-    app.emit("locked-changed", new_value)
-        .map_err(|e| e.to_string())?;
-    Ok(new_value)
+    ops::toggle_locked(&app)
 }
 
 #[tauri::command]
@@ -320,26 +273,11 @@ pub async fn check_for_updates(
 #[tauri::command]
 pub async fn exit_click_through(
     app: AppHandle,
-    window: WebviewWindow,
     state: tauri::State<'_, AppState>,
     token: String,
 ) -> Result<(), String> {
     authorize_command(&state, &token, "exit_click_through")?;
-    let mut config = state.config.lock().map_err(|e| e.to_string())?;
-    if config.window.locked {
-        config.window.locked = false;
-        save_config(&state, &config);
-        drop(config);
-
-        window
-            .set_ignore_cursor_events(false)
-            .map_err(|e| e.to_string())?;
-
-        update_tray_exit_lock_enabled(&app, false);
-
-        app.emit("locked-changed", false)
-            .map_err(|e| e.to_string())?;
-    }
+    ops::exit_click_through(&app)?;
     Ok(())
 }
 
