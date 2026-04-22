@@ -254,6 +254,16 @@ Key injection.js features:
 
 14. **Error-page detection** -- The injected script detects browser error pages using multiple heuristics (requires at least 2 indicators or a definitive error title) to avoid false positives on tech blogs.
 
+15. **Navigation via eval** -- When Rust navigates the webview by URL, use `crate::injection::js_navigate(&url)` (which `serde_json`-encodes the URL as a string literal), not raw `format!("... = {:?}", url)`. The Debug format is close-but-not-guaranteed to match JS string syntax; `js_navigate` is the audited path.
+
+16. **Placeholder substitution in `build_injection_script`** -- The home-URL placeholder in `injection.js` is substituted as a complete JSON string literal via `serde_json`; the placeholder itself is `"__FLOATVIEW_HOME_URL__"` (wrapped in quotes) so the replacement swaps the *whole* literal. Don't wrap the placeholder in extra quotes on the JS side.
+
+17. **Opacity clamping** -- Always go through `config::clamp_opacity`; it snaps near-opaque to 1.0 (lets the Windows backend drop `WS_EX_LAYERED`) and rejects non-finite inputs that would otherwise poison the saved config.
+
+18. **Title truncation** -- `set_window_title` calls `truncate_title`, which respects UTF-8 char boundaries. Do NOT revert to `&title[..N]` slicing; it panics on multi-byte codepoints that any page can craft into a title.
+
+19. **Capabilities** -- The `global-shortcut` plugin's JS register/unregister permissions are NOT granted. Hotkey management is Rust-only; don't add those permissions without a matching JS feature.
+
 ## Testing
 
 Run unit tests in `src-tauri/` (via `cargo test`). Test manually:

@@ -8,7 +8,7 @@
 //! good geometry with a transient bad measurement.
 
 use tauri::{Monitor, WebviewWindow};
-use tracing::{info, warn};
+use tracing::{debug, warn};
 
 use crate::config::AppConfig;
 use crate::config_io::save_config;
@@ -57,11 +57,11 @@ pub fn persist_window_geometry(
     state: &AppState,
 ) -> Result<(), String> {
     if window.is_minimized().map_err(|e| e.to_string())? {
-        info!("Skipping geometry persistence because window is minimized");
+        debug!("Skipping geometry persistence because window is minimized");
         return Ok(());
     }
     if window.is_maximized().map_err(|e| e.to_string())? {
-        info!("Skipping geometry persistence because window is maximized");
+        debug!("Skipping geometry persistence because window is maximized");
         return Ok(());
     }
 

@@ -8,8 +8,9 @@ use tauri::{AppHandle, Emitter, WebviewWindow};
 use tauri_plugin_updater::UpdaterExt;
 
 use crate::browsing_data;
-use crate::config::{AppConfig, CropConfig};
+use crate::config::{clamp_opacity, AppConfig, CropConfig};
 use crate::config_io::{persist_recent_url, sanitize_config, save_config, CROP_MIN_DIM};
+use crate::injection::js_navigate;
 use crate::opacity;
 use crate::state::{authorize_command, update_tray_exit_lock_enabled, AppState};
 use crate::urls::{normalize_url, urls_match, DEFAULT_HOME_URL};
@@ -56,7 +57,7 @@ pub async fn navigate(
     let url = normalize_url(&url)?;
     persist_recent_url(&state, &url)?;
     window
-        .eval(format!("window.location.href = {:?}", url))
+        .eval(js_navigate(&url))
         .map_err(|e| e.to_string())?;
     Ok(true)
 }
@@ -76,7 +77,7 @@ pub async fn navigate_home(
     };
     let _ = window.eval("window.stop()");
     window
-        .eval(format!("window.location.href = {:?}", home_url))
+        .eval(js_navigate(&home_url))
         .map_err(|e| e.to_string())?;
     Ok(true)
 }
@@ -114,7 +115,7 @@ pub async fn set_opacity(
     token: String,
 ) -> Result<(), String> {
     authorize_command(&state, &token, "set_opacity")?;
-    let opacity = if opacity > 0.99 { 1.0 } else { opacity.clamp(0.1, 1.0) };
+    let opacity = clamp_opacity(opacity);
     opacity::set_window_opacity(&window, opacity);
 
     let mut config = state.config.lock().map_err(|e| e.to_string())?;
@@ -135,7 +136,7 @@ pub async fn set_opacity_live(
     token: String,
 ) -> Result<(), String> {
     authorize_command(&state, &token, "set_opacity_live")?;
-    let opacity = if opacity > 0.99 { 1.0 } else { opacity.clamp(0.1, 1.0) };
+    let opacity = clamp_opacity(opacity);
     opacity::set_window_opacity(&window, opacity);
     Ok(())
 }
@@ -350,12 +351,29 @@ pub async fn set_window_title(
     title: String,
 ) -> Result<(), String> {
     authorize_command(&state, &token, "set_window_title")?;
-    let title = if title.len() > 256 {
-        format!("{}...", &title[..253])
-    } else {
-        title
-    };
-    window.set_title(&title).map_err(|e| e.to_string())
+    window
+        .set_title(&truncate_title(&title))
+        .map_err(|e| e.to_string())
+}
+
+/// Truncate a window title to a Win32-safe byte length, respecting UTF-8 char
+/// boundaries. A naive `&s[..253]` panics when byte 253 lands inside a
+/// multi-byte codepoint, which any page can trigger by crafting a title.
+fn truncate_title(title: &str) -> String {
+    const MAX_BYTES: usize = 256;
+    if title.len() <= MAX_BYTES {
+        return title.to_string();
+    }
+    let ellipsis = "...";
+    let budget = MAX_BYTES - ellipsis.len();
+    let mut cut = budget;
+    while cut > 0 && !title.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    let mut out = String::with_capacity(cut + ellipsis.len());
+    out.push_str(&title[..cut]);
+    out.push_str(ellipsis);
+    out
 }
 
 #[tauri::command]
@@ -453,4 +471,44 @@ pub async fn clear_site_data(
 ) -> Result<(), String> {
     authorize_command(&state, &token, "clear_site_data")?;
     browsing_data::clear_all(&window)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn truncate_title_passes_short_titles_unchanged() {
+        let title = "Short title";
+        assert_eq!(truncate_title(title), title);
+    }
+
+    #[test]
+    fn truncate_title_appends_ellipsis_past_limit() {
+        let title = "a".repeat(300);
+        let truncated = truncate_title(&title);
+        assert!(truncated.len() <= 256);
+        assert!(truncated.ends_with("..."));
+    }
+
+    #[test]
+    fn truncate_title_respects_utf8_char_boundary() {
+        // A naive `&s[..253]` panics here: byte 253 lands inside a 3-byte
+        // CJK codepoint. truncate_title must back up to a boundary.
+        let mut title = "a".repeat(252);
+        title.push_str("日本語テスト");
+        let truncated = truncate_title(&title);
+        assert!(truncated.is_char_boundary(truncated.len() - "...".len()));
+        assert!(truncated.ends_with("..."));
+    }
+
+    #[test]
+    fn truncate_title_handles_edge_case_all_multibyte() {
+        let title = "漢".repeat(200); // 3 bytes * 200 = 600 bytes
+        let truncated = truncate_title(&title);
+        assert!(truncated.len() <= 256);
+        assert!(truncated.ends_with("..."));
+        // Must not split a codepoint
+        assert!(std::str::from_utf8(truncated.as_bytes()).is_ok());
+    }
 }

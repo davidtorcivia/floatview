@@ -12,6 +12,7 @@
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager};
+use tracing::error;
 
 use crate::actions::{
     do_exit_click_through, do_install_update, do_navigate_home, do_toggle_always_on_top,
@@ -80,8 +81,11 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
     {
         let state = app.state::<AppState>();
-        let mut guard = state.tray_exit_lock_item.lock().unwrap();
-        *guard = Some(exit_lock.clone());
+        let lock_result = state.tray_exit_lock_item.lock();
+        match lock_result {
+            Ok(mut guard) => *guard = Some(exit_lock.clone()),
+            Err(e) => error!("tray_exit_lock_item mutex poisoned during setup: {}", e),
+        }
     }
 
     let _tray = TrayIconBuilder::with_id("main")

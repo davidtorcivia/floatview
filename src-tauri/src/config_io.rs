@@ -15,7 +15,7 @@ use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Manager};
 use tracing::{error, warn};
 
-use crate::config::{AppConfig, CropConfig};
+use crate::config::{clamp_opacity, AppConfig, CropConfig};
 use crate::state::AppState;
 use crate::urls::{normalize_url, DEFAULT_HOME_URL};
 use crate::window_state::normalize_startup_window_size;
@@ -60,7 +60,7 @@ pub fn sanitize_config(mut config: AppConfig) -> AppConfig {
     let (width, height) = normalize_startup_window_size(config.window.width, config.window.height);
     config.window.width = width;
     config.window.height = height;
-    config.window.opacity = config.window.opacity.clamp(0.1, 1.0);
+    config.window.opacity = clamp_opacity(config.window.opacity);
     config.window.monitor = config.window.monitor.max(0);
 
     config.home_url = normalize_url(&config.home_url)
@@ -297,13 +297,15 @@ mod tests {
 
     #[test]
     fn sanitize_config_clamps_crop_and_keeps_it_in_bounds() {
-        let mut config = AppConfig::default();
-        config.crop = Some(CropConfig {
-            x: 0.9,
-            y: 0.9,
-            width: 0.5,
-            height: 0.5,
-        });
+        let config = AppConfig {
+            crop: Some(CropConfig {
+                x: 0.9,
+                y: 0.9,
+                width: 0.5,
+                height: 0.5,
+            }),
+            ..AppConfig::default()
+        };
         let sanitized = sanitize_config(config);
         let crop = sanitized.crop.expect("crop should be preserved");
         assert!((crop.x + crop.width) <= 1.0 + f64::EPSILON);
@@ -312,13 +314,15 @@ mod tests {
 
     #[test]
     fn sanitize_config_clamps_tiny_crop_dims() {
-        let mut config = AppConfig::default();
-        config.crop = Some(CropConfig {
-            x: 0.0,
-            y: 0.0,
-            width: 0.0,
-            height: 0.0001,
-        });
+        let config = AppConfig {
+            crop: Some(CropConfig {
+                x: 0.0,
+                y: 0.0,
+                width: 0.0,
+                height: 0.0001,
+            }),
+            ..AppConfig::default()
+        };
         let sanitized = sanitize_config(config);
         let crop = sanitized.crop.expect("crop should be preserved");
         assert!(crop.width >= CROP_MIN_DIM);
@@ -327,21 +331,25 @@ mod tests {
 
     #[test]
     fn sanitize_config_drops_non_finite_crop() {
-        let mut config = AppConfig::default();
-        config.crop = Some(CropConfig {
-            x: f64::NAN,
-            y: 0.0,
-            width: 0.5,
-            height: 0.5,
-        });
+        let config = AppConfig {
+            crop: Some(CropConfig {
+                x: f64::NAN,
+                y: 0.0,
+                width: 0.5,
+                height: 0.5,
+            }),
+            ..AppConfig::default()
+        };
         let sanitized = sanitize_config(config);
         assert!(sanitized.crop.is_none());
     }
 
     #[test]
     fn sanitize_config_enforces_bookmark_limit() {
-        let mut config = AppConfig::default();
-        config.bookmarks = (0..100).map(|i| format!("https://site{}.com/", i)).collect();
+        let config = AppConfig {
+            bookmarks: (0..100).map(|i| format!("https://site{}.com/", i)).collect(),
+            ..AppConfig::default()
+        };
         let sanitized = sanitize_config(config);
         assert_eq!(sanitized.bookmarks.len(), 50);
     }

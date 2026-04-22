@@ -9,7 +9,9 @@ use tauri::{AppHandle, Emitter, Manager};
 use tracing::{error, info, warn};
 use tauri_plugin_updater::UpdaterExt;
 
+use crate::config::clamp_opacity;
 use crate::config_io::save_config;
+use crate::injection::js_navigate;
 use crate::opacity;
 use crate::state::{update_tray_exit_lock_enabled, AppState};
 use crate::urls::{normalize_url, DEFAULT_HOME_URL};
@@ -25,7 +27,7 @@ pub fn do_navigate_home(app: &AppHandle) {
             DEFAULT_HOME_URL.to_string()
         };
         let _ = window.eval("window.stop()");
-        let _ = window.eval(format!("window.location.href = {:?}", home_url));
+        let _ = window.eval(js_navigate(&home_url));
     }
 }
 
@@ -95,37 +97,25 @@ pub fn do_toggle_locked(app: &AppHandle) {
 }
 
 pub fn do_exit_click_through(app: &AppHandle) {
-    let is_locked = {
-        let state = app.state::<AppState>();
-        let config = match state.config.lock() {
-            Ok(config) => config,
-            Err(e) => {
-                error!("Failed to lock config in do_exit_click_through: {}", e);
-                return;
-            }
-        };
-        config.window.locked
-    };
-    if !is_locked {
-        return;
-    }
-
     let Some(window) = app.get_webview_window("main") else {
         warn!("do_exit_click_through: main window not found");
         return;
     };
-    {
-        let state = app.state::<AppState>();
-        let mut config = match state.config.lock() {
-            Ok(config) => config,
-            Err(e) => {
-                error!("Failed to lock config in do_exit_click_through: {}", e);
-                return;
-            }
-        };
-        config.window.locked = false;
-        save_config(&state, &config);
+
+    let state = app.state::<AppState>();
+    let mut config = match state.config.lock() {
+        Ok(config) => config,
+        Err(e) => {
+            error!("Failed to lock config in do_exit_click_through: {}", e);
+            return;
+        }
+    };
+    if !config.window.locked {
+        return;
     }
+    config.window.locked = false;
+    save_config(&state, &config);
+    drop(config);
 
     // Safety-critical: this releases the user from click-through mode. If it
     // fails, the invisible window still eats all cursor input. Log at error
@@ -152,7 +142,7 @@ pub fn do_opacity_change(app: &AppHandle, delta: f64) {
                     return;
                 }
             };
-            let op = (config.window.opacity + delta).clamp(0.1, 1.0);
+            let op = clamp_opacity(config.window.opacity + delta);
             config.window.opacity = op;
             save_config(&state, &config);
             op

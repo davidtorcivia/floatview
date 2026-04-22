@@ -44,7 +44,9 @@
     const HIDE_DELAY = 300;
     const IS_MAC = navigator.platform.includes('Mac');
     const COMMAND_TOKEN = '__FLOATVIEW_COMMAND_TOKEN__';
-    const EMBEDDED_HOME_URL = '__FLOATVIEW_HOME_URL__';
+    // Emitted as a full JS string literal by the Rust side via serde_json,
+    // so the placeholder must NOT be wrapped in quotes here.
+    const EMBEDDED_HOME_URL = "__FLOATVIEW_HOME_URL__";
 
     function formatKey(shortcut) {
         if (!IS_MAC) return shortcut;

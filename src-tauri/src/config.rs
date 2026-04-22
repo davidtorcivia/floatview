@@ -1,5 +1,23 @@
 use serde::{Deserialize, Serialize};
 
+/// Minimum opacity. Below this the window becomes effectively invisible,
+/// which is a click-through-style trap we don't want to reach by accident.
+pub const MIN_OPACITY: f64 = 0.1;
+
+/// Clamp an opacity value into the permitted range, snapping near-opaque
+/// values to exactly 1.0 so the Windows backend can drop the layered flag
+/// for clean rendering. Non-finite inputs (NaN/Inf) resolve to fully opaque.
+pub fn clamp_opacity(opacity: f64) -> f64 {
+    if !opacity.is_finite() {
+        return 1.0;
+    }
+    if opacity > 0.99 {
+        1.0
+    } else {
+        opacity.clamp(MIN_OPACITY, 1.0)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WindowConfig {
     pub x: i32,
@@ -101,5 +119,36 @@ impl Default for AppConfig {
             bookmarks: Vec::new(),
             crop: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clamp_opacity_snaps_near_opaque() {
+        assert_eq!(clamp_opacity(0.999), 1.0);
+        assert_eq!(clamp_opacity(1.0), 1.0);
+        assert_eq!(clamp_opacity(2.0), 1.0);
+    }
+
+    #[test]
+    fn clamp_opacity_enforces_floor() {
+        assert_eq!(clamp_opacity(0.0), MIN_OPACITY);
+        assert_eq!(clamp_opacity(-5.0), MIN_OPACITY);
+    }
+
+    #[test]
+    fn clamp_opacity_handles_non_finite() {
+        assert_eq!(clamp_opacity(f64::NAN), 1.0);
+        assert_eq!(clamp_opacity(f64::INFINITY), 1.0);
+        assert_eq!(clamp_opacity(f64::NEG_INFINITY), 1.0);
+    }
+
+    #[test]
+    fn clamp_opacity_preserves_mid_range() {
+        assert_eq!(clamp_opacity(0.5), 0.5);
+        assert_eq!(clamp_opacity(0.3), 0.3);
     }
 }

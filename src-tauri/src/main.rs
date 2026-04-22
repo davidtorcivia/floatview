@@ -115,20 +115,17 @@ fn run() {
             // invariant reaches disk before any crash could strand the user.
             {
                 let state_ref = app.state::<AppState>();
-                let needs_write = {
-                    let mut c = state_ref.config.lock().unwrap();
-                    if c.window.locked {
+                let save_path = state_ref.config_path.clone();
+                let snapshot = match state_ref.config.lock() {
+                    Ok(mut c) if c.window.locked => {
                         c.window.locked = false;
                         let _ = window.set_ignore_cursor_events(false);
-                        true
-                    } else {
-                        false
+                        Some(c.clone())
                     }
+                    _ => None,
                 };
-                if needs_write {
-                    if let Ok(c) = state_ref.config.lock() {
-                        do_save_config(&state_ref.config_path, &c);
-                    }
+                if let Some(cfg) = snapshot {
+                    do_save_config(&save_path, &cfg);
                 }
             }
 
