@@ -161,6 +161,49 @@
 
     const shadow = container.attachShadow({ mode: 'closed' });
 
+    // Page-side stylesheet: fades the page's own body children (but not
+    // our shadow-DOM container) via a CSS custom property on :root. Pairs
+    // with the Win32 / macOS window-alpha floor in opacity.rs so the
+    // toolbar stays readable even when the slider is near the bottom.
+    // Substituted at init-script build time from
+    // `crate::opacity::WINDOW_ALPHA_FLOOR` so Rust stays the sole source
+    // of truth; parseFloat keeps the template valid JS pre-substitution.
+    const WINDOW_ALPHA_FLOOR = parseFloat("__FLOATVIEW_ALPHA_FLOOR__");
+    (function injectContentOpacityStyle() {
+        const fvStyle = document.createElement('style');
+        fvStyle.id = 'floatview-content-opacity';
+        fvStyle.textContent =
+            'body > *:not(#floatview-root) { opacity: var(--fv-content-opacity, 1) !important; }';
+        const attach = () => {
+            const parent = document.head || document.documentElement;
+            if (parent && !document.getElementById('floatview-content-opacity')) {
+                parent.appendChild(fvStyle);
+            }
+        };
+        attach();
+        // `<head>` may not exist yet at document_created; try again when
+        // the DOM is further along.
+        if (!document.head) {
+            document.addEventListener('DOMContentLoaded', attach, { once: true });
+        }
+    })();
+
+    // Compute the CSS opacity we apply to page content so the *combined*
+    // visibility (window alpha * content CSS opacity) matches the raw
+    // slider value. With the floor at 0.55, raw=0.1 -> window 0.595,
+    // content_css 0.168, final 0.1 (toolbar stays at 0.595).
+    function computeContentOpacity(raw) {
+        const r = Math.max(0, Math.min(1, raw));
+        const windowAlpha = WINDOW_ALPHA_FLOOR + (1 - WINDOW_ALPHA_FLOOR) * r;
+        if (windowAlpha <= 0) return 0;
+        return Math.min(1, r / windowAlpha);
+    }
+
+    function applyContentOpacity(raw) {
+        const css = computeContentOpacity(raw);
+        document.documentElement.style.setProperty('--fv-content-opacity', css.toString());
+    }
+
     const style = document.createElement('style');
     style.textContent = `
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1024,6 +1067,145 @@
             background: #2e2e34;
             color: #fff;
         }
+
+        .volume-popup {
+            position: fixed;
+            top: 0;
+            left: 0;
+            background: linear-gradient(160deg, rgba(46, 46, 52, 0.92), rgba(36, 36, 42, 0.86));
+            backdrop-filter: blur(28px) saturate(1.15);
+            -webkit-backdrop-filter: blur(28px) saturate(1.15);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 14px;
+            padding: 12px 8px 8px 8px;
+            box-shadow: 0 12px 32px rgba(0,0,0,0.3), 0 2px 6px rgba(0,0,0,0.15);
+            z-index: 2147483647;
+            pointer-events: none;
+            opacity: 0;
+            transform-origin: top center;
+            /* Start as a tiny point at the icon's position; grow out from
+               there. Near-zero scale + a small upward nudge so the first
+               frame visually lives inside the mute button. */
+            transform: scale(0.08) translateY(-10px);
+            transition:
+                opacity 0.16s ease-out,
+                transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            will-change: transform, opacity;
+        }
+
+        .volume-popup.visible {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+            pointer-events: auto;
+        }
+
+        /* Tiny "pointer" joining the popup to the mute button so it
+           reads as one continuous element rather than a floating panel.
+           Solid color (not backdrop-filtered) so it matches the popup's
+           top edge without a rendering seam. pointer-events:none so it
+           never intercepts clicks aimed at the mute button above. */
+        .volume-popup::before {
+            content: '';
+            position: absolute;
+            top: -5px;
+            left: 50%;
+            width: 10px;
+            height: 10px;
+            margin-left: -5px;
+            background: rgba(46, 46, 52, 0.92);
+            border-top: 1px solid rgba(255,255,255,0.08);
+            border-left: 1px solid rgba(255,255,255,0.08);
+            transform: rotate(45deg);
+            border-top-left-radius: 2px;
+            pointer-events: none;
+        }
+
+        /* Highlight the toolbar mute button while the popup is open,
+           so the two read as a single expanded control. */
+        .btn.dropdown-open {
+            background: rgba(255,255,255,0.12);
+            color: #fff;
+        }
+
+        .volume-slider {
+            -webkit-app-region: no-drag;
+            position: relative;
+            width: 28px;
+            height: 140px;
+            padding: 7px 0;
+            cursor: grab;
+            touch-action: none;
+            outline: none;
+        }
+
+        .volume-slider:focus-visible .volume-slider-track {
+            box-shadow: 0 0 0 2px rgba(200, 140, 80, 0.45);
+        }
+
+        .volume-slider.dragging { cursor: grabbing; }
+        /* .inactive dims the slider when the page has no media, but
+           keeps it interactive — dragging still updates its visual so
+           the control never feels broken. */
+        .volume-slider.inactive { opacity: 0.45; }
+
+        .volume-slider-track {
+            position: absolute;
+            left: 50%;
+            top: 7px;
+            bottom: 7px;
+            width: 4px;
+            margin-left: -2px;
+            background: rgba(255,255,255,0.14);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .volume-slider-fill {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: var(--vol-pct, 100%);
+            background: linear-gradient(to top,
+                rgba(200, 140, 80, 0.95),
+                rgba(220, 170, 110, 0.8));
+            border-radius: 2px;
+        }
+
+        .volume-slider-fill,
+        .volume-slider-thumb {
+            transition:
+                bottom 0.09s cubic-bezier(0.22, 1, 0.36, 1),
+                height 0.09s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .volume-slider.dragging .volume-slider-fill,
+        .volume-slider.dragging .volume-slider-thumb {
+            transition: none;
+        }
+
+        .volume-slider-thumb {
+            position: absolute;
+            left: 50%;
+            bottom: var(--vol-pct, 100%);
+            width: 14px;
+            height: 14px;
+            margin-left: -7px;
+            margin-bottom: -7px;
+            background: #fff;
+            border-radius: 50%;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3), 0 0 0 1px rgba(0,0,0,0.04);
+            pointer-events: none;
+        }
+
+        .volume-slider.dragging .volume-slider-thumb {
+            box-shadow: 0 3px 10px rgba(0,0,0,0.35), 0 0 0 3px rgba(200, 140, 80, 0.25);
+            transform: none;
+        }
     `;
     shadow.appendChild(style);
 
@@ -1112,6 +1294,20 @@
         <button class="snap-cell" data-pos="bottom-right" title="Bottom Right" style="grid-column:3;">&#8600;</button>
     `);
     shadow.appendChild(snapPopup);
+
+    const volumePopup = document.createElement('div');
+    volumePopup.className = 'volume-popup';
+    setInner(volumePopup, `
+        <div class="volume-slider" id="volume-slider" tabindex="0" role="slider"
+             aria-label="Volume" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" title="Volume">
+            <div class="volume-slider-track">
+                <div class="volume-slider-fill"></div>
+            </div>
+            <div class="volume-slider-thumb"></div>
+        </div>
+        <button class="btn" id="btn-volume-mute" title="Toggle mute (${formatKey('Alt+Shift+M')})">${icons.volume}</button>
+    `);
+    shadow.appendChild(volumePopup);
 
     // --------------------------------------------------------------------
     // [6] Settings modal + tutorial modal
@@ -1377,6 +1573,9 @@
     const btnCrop = strip.querySelector('#btn-crop');
     const btnZoomVideo = strip.querySelector('#btn-zoom-video');
     const btnMute = strip.querySelector('#btn-mute');
+    const volumeSlider = volumePopup.querySelector('#volume-slider');
+    const volumeSliderTrack = volumePopup.querySelector('.volume-slider-track');
+    const btnVolumeMute = volumePopup.querySelector('#btn-volume-mute');
 
     // --------------------------------------------------------------------
     // [8] Auto-refresh timer
@@ -1736,6 +1935,36 @@
         return false;
     }
 
+    // Pick a representative volume to seed the dropdown slider. Returns
+    // null if there's no media at all. Uses the first unmuted element's
+    // volume if any; otherwise falls back to the first media's volume.
+    function representativeVolume() {
+        const media = document.querySelectorAll('video, audio');
+        if (media.length === 0) return null;
+        for (const m of media) {
+            if (!m.muted) return m.volume;
+        }
+        return media[0].volume;
+    }
+
+    let _suppressVolumeSync = false;
+    let _volumeValue = 1.0;
+
+    // Paint the custom slider's fill/thumb from a 0..1 value.
+    function renderVolumeSlider(value) {
+        _volumeValue = Math.max(0, Math.min(1, value));
+        const pct = (_volumeValue * 100);
+        volumeSlider.style.setProperty('--vol-pct', pct.toFixed(2) + '%');
+        volumeSlider.setAttribute('aria-valuenow', Math.round(pct));
+    }
+
+    // Visually dim the slider when there's no media on the page, but
+    // keep pointer / keyboard input flowing — the control should never
+    // feel broken, and the volume will apply as soon as media appears.
+    function setVolumeInactive(inactive) {
+        volumeSlider.classList.toggle('inactive', inactive);
+    }
+
     function updateMuteIcon() {
         const state = anyMediaUnmuted();
         if (state === null) {
@@ -1743,15 +1972,29 @@
             setInner(btnMute, icons.volume);
             btnMute.classList.remove('active');
             btnMute.style.opacity = '0.5';
+            setInner(btnVolumeMute, icons.volume);
+            btnVolumeMute.classList.remove('active');
+            setVolumeInactive(true);
             return;
         }
         btnMute.style.opacity = '';
+        setVolumeInactive(false);
         if (state) {
             setInner(btnMute, icons.volume);
             btnMute.classList.remove('active');
+            setInner(btnVolumeMute, icons.volume);
+            btnVolumeMute.classList.remove('active');
         } else {
             setInner(btnMute, icons.volumeMuted);
             btnMute.classList.add('active');
+            setInner(btnVolumeMute, icons.volumeMuted);
+            btnVolumeMute.classList.add('active');
+        }
+        // Keep the slider in sync with the page unless the user is
+        // actively dragging it (handled via _suppressVolumeSync).
+        if (!_suppressVolumeSync) {
+            const v = representativeVolume();
+            if (v !== null) renderVolumeSlider(v);
         }
     }
 
@@ -1763,7 +2006,144 @@
         updateMuteIcon();
     }
 
-    btnMute.addEventListener('click', toggleMuteAll);
+    function setAllMediaVolume(vol) {
+        const clamped = Math.max(0, Math.min(1, vol));
+        const media = document.querySelectorAll('video, audio');
+        for (const m of media) {
+            m.volume = clamped;
+            // Auto-unmute when the user drags the volume up from zero.
+            if (clamped > 0 && m.muted) m.muted = false;
+        }
+    }
+
+    function positionVolumePopup() {
+        const rect = btnMute.getBoundingClientRect();
+        // Snug against the button so the popup reads as an extension of
+        // it rather than a floating panel. The ::before nub bridges any
+        // residual gap.
+        volumePopup.style.top = (rect.bottom + 4) + 'px';
+        // Center the (narrow) popup horizontally under the mute button,
+        // clamping to the viewport edge.
+        const width = volumePopup.offsetWidth || 48;
+        let left = rect.left + (rect.width - width) / 2;
+        if (left < 8) left = 8;
+        const maxLeft = window.innerWidth - width - 8;
+        if (left > maxLeft) left = Math.max(8, maxLeft);
+        volumePopup.style.left = left + 'px';
+    }
+
+    function showVolumePopup() {
+        updateMuteIcon();
+        positionVolumePopup();
+        volumePopup.classList.add('visible');
+        btnMute.classList.add('dropdown-open');
+        recentDropdown.classList.remove('visible');
+        bookmarksDropdown.classList.remove('visible');
+        snapPopup.classList.remove('visible');
+    }
+
+    function hideVolumePopup() {
+        volumePopup.classList.remove('visible');
+        btnMute.classList.remove('dropdown-open');
+    }
+
+    btnMute.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (volumePopup.classList.contains('visible')) {
+            hideVolumePopup();
+        } else {
+            showVolumePopup();
+        }
+    });
+
+    btnVolumeMute.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleMuteAll();
+    });
+
+    volumePopup.addEventListener('click', (e) => {
+        e.stopPropagation();
+    });
+
+    // --- Custom vertical slider: pointer-driven drag ---
+    // Native <input type=range> in `writing-mode: vertical-*` has flaky
+    // drag tracking in current WebView2 builds; rolling our own keeps
+    // behavior predictable and the visuals match the toolbar's glass
+    // aesthetic.
+    function volumeFromPointer(e) {
+        const rect = volumeSliderTrack.getBoundingClientRect();
+        if (rect.height <= 0) return _volumeValue;
+        const y = e.clientY - rect.top;
+        const ratio = 1 - Math.max(0, Math.min(rect.height, y)) / rect.height;
+        return ratio;
+    }
+
+    let _sliderDragging = false;
+    let _sliderPointerId = null;
+
+    volumeSlider.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        _sliderDragging = true;
+        _sliderPointerId = e.pointerId;
+        _suppressVolumeSync = true;
+        volumeSlider.classList.add('dragging');
+        try { volumeSlider.setPointerCapture(e.pointerId); } catch (_) {}
+        const v = volumeFromPointer(e);
+        renderVolumeSlider(v);
+        setAllMediaVolume(v);
+    });
+
+    volumeSlider.addEventListener('pointermove', (e) => {
+        if (!_sliderDragging || e.pointerId !== _sliderPointerId) return;
+        const v = volumeFromPointer(e);
+        renderVolumeSlider(v);
+        setAllMediaVolume(v);
+    });
+
+    function endVolumeDrag(e) {
+        if (!_sliderDragging) return;
+        if (e && e.pointerId !== _sliderPointerId) return;
+        _sliderDragging = false;
+        _sliderPointerId = null;
+        volumeSlider.classList.remove('dragging');
+        try { if (e) volumeSlider.releasePointerCapture(e.pointerId); } catch (_) {}
+        _suppressVolumeSync = false;
+        updateMuteIcon();
+    }
+    volumeSlider.addEventListener('pointerup', endVolumeDrag);
+    volumeSlider.addEventListener('pointercancel', endVolumeDrag);
+    volumeSlider.addEventListener('lostpointercapture', endVolumeDrag);
+
+    // Keyboard control for accessibility: ↑/↓ nudge by 5%, PageUp/Down
+    // by 10%, Home/End for 0% / 100%.
+    volumeSlider.addEventListener('keydown', (e) => {
+        let next = null;
+        switch (e.key) {
+            case 'ArrowUp':   next = _volumeValue + 0.05; break;
+            case 'ArrowDown': next = _volumeValue - 0.05; break;
+            case 'PageUp':    next = _volumeValue + 0.10; break;
+            case 'PageDown':  next = _volumeValue - 0.10; break;
+            case 'Home':      next = 0; break;
+            case 'End':       next = 1; break;
+            default: return;
+        }
+        e.preventDefault();
+        next = Math.max(0, Math.min(1, next));
+        renderVolumeSlider(next);
+        setAllMediaVolume(next);
+        updateMuteIcon();
+    });
+
+    // Scroll-wheel on the slider for quick fine adjustments.
+    volumeSlider.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const step = e.deltaY < 0 ? 0.05 : -0.05;
+        const next = Math.max(0, Math.min(1, _volumeValue + step));
+        renderVolumeSlider(next);
+        setAllMediaVolume(next);
+        updateMuteIcon();
+    }, { passive: false });
 
     // Attach volumechange listeners to current and future media
     // elements so page-side mute toggles (YouTube 'M' shortcut etc.)
@@ -1892,7 +2272,8 @@
             if (tutorialActive ||
                 !settingsModal.classList.contains('hidden') ||
                 recentDropdown.classList.contains('visible') ||
-                bookmarksDropdown.classList.contains('visible')) {
+                bookmarksDropdown.classList.contains('visible') ||
+                volumePopup.classList.contains('visible')) {
                 return;
             }
             hideStrip();
@@ -1949,7 +2330,8 @@
         // Don't hide if modal or dropdown is open
         if (!settingsModal.classList.contains('hidden') ||
             recentDropdown.classList.contains('visible') ||
-            bookmarksDropdown.classList.contains('visible')) {
+            bookmarksDropdown.classList.contains('visible') ||
+            volumePopup.classList.contains('visible')) {
             return;
         }
         scheduleHide();
@@ -1987,6 +2369,9 @@
         }
         if (!strip.contains(e.target) && !snapPopup.contains(e.target)) {
             snapPopup.classList.remove('visible');
+        }
+        if (!strip.contains(e.target) && !volumePopup.contains(e.target)) {
+            hideVolumePopup();
         }
     });
 
@@ -2097,11 +2482,13 @@
         if (_opacityThrottle) return;
         _opacityThrottle = setTimeout(() => { _opacityThrottle = null; }, 32);
         const opacity = sliderToOpacity(parseInt(e.target.value, 10));
+        applyContentOpacity(opacity);
         invoke('set_opacity_live', { opacity });
     });
 
     opacitySlider.addEventListener('change', async (e) => {
         const opacity = sliderToOpacity(parseInt(e.target.value, 10));
+        applyContentOpacity(opacity);
         await invoke('set_opacity', { opacity });
     });
 
@@ -2494,6 +2881,7 @@
     settingOpacity.addEventListener('input', (e) => {
         const opacity = sliderToOpacity(parseInt(e.target.value, 10));
         settingOpacityValue.textContent = Math.round(opacity * 100);
+        applyContentOpacity(opacity);
         if (_settingOpacityThrottle) return;
         _settingOpacityThrottle = setTimeout(() => { _settingOpacityThrottle = null; }, 32);
         invoke('set_opacity_live', { opacity });
@@ -2501,6 +2889,7 @@
 
     settingOpacity.addEventListener('change', async (e) => {
         const opacity = sliderToOpacity(parseInt(e.target.value, 10));
+        applyContentOpacity(opacity);
         await invoke('set_opacity', { opacity });
     });
 
@@ -2639,6 +3028,8 @@
                 exitCropSelection();
             } else if (cropActive) {
                 removeCrop();
+            } else if (volumePopup.classList.contains('visible')) {
+                hideVolumePopup();
             } else if (bookmarksDropdown.classList.contains('visible')) {
                 bookmarksDropdown.classList.remove('visible');
             } else if (recentDropdown.classList.contains('visible')) {
@@ -2736,6 +3127,7 @@
                 updateLockIcon(config.window.locked);
                 btnLock.classList.toggle('active', config.window.locked);
                 opacitySlider.value = opacityToSlider(config.window.opacity);
+                applyContentOpacity(config.window.opacity);
                 updateRecentDropdown();
                 updateBookmarkIcon();
                 updateBookmarksDropdown();
@@ -2806,6 +3198,7 @@
                 break;
             case 'opacity':
                 opacitySlider.value = opacityToSlider(value);
+                applyContentOpacity(value);
                 if (config) config.window.opacity = value;
                 break;
             case 'open_settings':
@@ -2836,6 +3229,7 @@
 
         listen('opacity-changed', (event) => {
             opacitySlider.value = opacityToSlider(event.payload);
+            applyContentOpacity(event.payload);
             if (config) {
                 config.window.opacity = event.payload;
             }

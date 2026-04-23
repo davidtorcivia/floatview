@@ -1,29 +1,36 @@
 //! Webview initialization script + the small media-control JS snippets
 //! executed by direct-action helpers.
 //!
-//! The big control strip lives in `injection.js`. Two placeholders are
-//! replaced at build time: the per-session command token, and the
-//! configured home URL.
+//! The big control strip lives in `injection.js`. Three placeholders are
+//! replaced at build time: the per-session command token, the configured
+//! home URL, and the window-alpha floor (so `opacity.rs` stays the sole
+//! source of truth for the toolbar-readability curve).
 
 /// Full control-strip script, embedded at compile time.
 const INJECTION_SCRIPT: &str = include_str!("injection.js");
 
 const COMMAND_TOKEN_PLACEHOLDER: &str = "__FLOATVIEW_COMMAND_TOKEN__";
 const HOME_URL_PLACEHOLDER: &str = "\"__FLOATVIEW_HOME_URL__\"";
+const ALPHA_FLOOR_PLACEHOLDER: &str = "__FLOATVIEW_ALPHA_FLOOR__";
 
 /// Build the initialization script for a new webview by substituting the
-/// per-session command token and the home URL into the embedded template.
+/// per-session command token, the home URL, and the window-alpha floor
+/// into the embedded template.
 ///
 /// The token is a v4 UUID (alphanumerics + hyphens) so a plain `replace`
 /// is safe for it. The home URL is substituted as a full JS string literal
 /// via `serde_json` so quotes/backslashes/control chars in a tampered-with
-/// config can't escape the quoting and become executable code.
+/// config can't escape the quoting and become executable code. The alpha
+/// floor is rendered as an ASCII decimal; the JS side wraps it in
+/// `parseFloat(...)` so the pre-substitution template is still valid JS.
 pub fn build_injection_script(command_token: &str, home_url: &str) -> String {
     let home_literal = serde_json::to_string(home_url)
         .unwrap_or_else(|_| "\"\"".to_string());
+    let alpha_floor = format!("{}", crate::opacity::WINDOW_ALPHA_FLOOR);
     INJECTION_SCRIPT
         .replace(COMMAND_TOKEN_PLACEHOLDER, command_token)
         .replace(HOME_URL_PLACEHOLDER, &home_literal)
+        .replace(ALPHA_FLOOR_PLACEHOLDER, &alpha_floor)
 }
 
 /// Build a JS snippet that navigates the webview to the given URL.
@@ -176,6 +183,24 @@ mod tests {
         assert!(
             script.contains(&needle),
             "hostile home_url must appear as a JSON-encoded literal"
+        );
+    }
+
+    #[test]
+    fn build_injection_script_substitutes_alpha_floor() {
+        let script = build_injection_script("tkn", "https://host.test/");
+        // Placeholder replaced with the numeric value from opacity.rs.
+        assert!(
+            !script.contains("__FLOATVIEW_ALPHA_FLOOR__"),
+            "alpha floor placeholder must be substituted"
+        );
+        let expected = format!(
+            "WINDOW_ALPHA_FLOOR = parseFloat(\"{}\")",
+            crate::opacity::WINDOW_ALPHA_FLOOR
+        );
+        assert!(
+            script.contains(&expected),
+            "alpha floor must be substituted into the parseFloat call"
         );
     }
 
