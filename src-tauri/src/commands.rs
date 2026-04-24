@@ -206,17 +206,54 @@ pub async fn snap_window(
     let ww = win_size.width as i32;
     let wh = win_size.height as i32;
 
-    // Halves and thirds resize as well as position. Corners and center
-    // keep the user's current size — long-standing behavior.
+    // Halves/thirds/aspect resize. Corners and center don't take a size
+    // here directly — they restore the pre-snap size if one was saved
+    // (so corner snap after a half/third feels like "back to my normal
+    // size in this corner"), otherwise keep current size.
+    //
+    // For corners/center we recompute position below using the size
+    // we'll actually apply; ww/wh are recomputed after the size lookup.
     //
     // Padding budget per layout: edges + inter-tile gaps. Halves use
     // 3*padding (left edge, gap, right edge), thirds use 4*padding.
+    let restored_size: Option<(i32, i32)> = match position.as_str() {
+        "top-left" | "top-right" | "bottom-left" | "bottom-right" | "center" => state
+            .pre_snap_size
+            .lock()
+            .ok()
+            .and_then(|mut g| g.take())
+            .map(|(w, h)| (w as i32, h as i32)),
+        _ => None,
+    };
+
+    let (eff_w, eff_h) = restored_size.unwrap_or((ww, wh));
+
     let (x, y, new_size) = match position.as_str() {
-        "top-left" => (mx + padding, my + padding, None),
-        "top-right" => (mx + mw - ww - padding, my + padding, None),
-        "bottom-left" => (mx + padding, my + mh - wh - padding, None),
-        "bottom-right" => (mx + mw - ww - padding, my + mh - wh - padding, None),
-        "center" => (mx + (mw - ww) / 2, my + (mh - wh) / 2, None),
+        "top-left" => (
+            mx + padding,
+            my + padding,
+            restored_size.map(|(w, h)| (w, h)),
+        ),
+        "top-right" => (
+            mx + mw - eff_w - padding,
+            my + padding,
+            restored_size.map(|(w, h)| (w, h)),
+        ),
+        "bottom-left" => (
+            mx + padding,
+            my + mh - eff_h - padding,
+            restored_size.map(|(w, h)| (w, h)),
+        ),
+        "bottom-right" => (
+            mx + mw - eff_w - padding,
+            my + mh - eff_h - padding,
+            restored_size.map(|(w, h)| (w, h)),
+        ),
+        "center" => (
+            mx + (mw - eff_w) / 2,
+            my + (mh - eff_h) / 2,
+            restored_size.map(|(w, h)| (w, h)),
+        ),
         "left-half" => {
             let w = ((mw - 3 * padding) / 2).max(MIN_WINDOW_SIZE);
             let h = (mh - 2 * padding).max(MIN_WINDOW_SIZE);
@@ -255,18 +292,40 @@ pub async fn snap_window(
         _ => return Err("Invalid snap position".to_string()),
     };
 
-    if window.is_maximized().unwrap_or(false) {
-        window.unmaximize().map_err(|e| e.to_string())?;
+    // Halves/thirds (resizing) snaps mark the start of a snap chain.
+    // Save current size so a follow-up corner snap can restore it.
+    if matches!(
+        position.as_str(),
+        "left-half" | "right-half" | "top-half" | "bottom-half"
+            | "left-third" | "center-third" | "right-third"
+    ) {
+        if let Ok(mut pre) = state.pre_snap_size.lock() {
+            if pre.is_none() {
+                *pre = Some((ww as u32, wh as u32));
+            }
+        }
     }
 
-    if let Some((w, h)) = new_size {
-        window
-            .set_size(tauri::Size::Physical(tauri::PhysicalSize {
-                width: w as u32,
-                height: h as u32,
-            }))
-            .map_err(|e| e.to_string())?;
-    }
+    use std::sync::atomic::Ordering;
+    state.snap_resize_in_progress.store(true, Ordering::Release);
+
+    let resize_result = (|| -> Result<(), String> {
+        if window.is_maximized().unwrap_or(false) {
+            window.unmaximize().map_err(|e| e.to_string())?;
+        }
+        if let Some((w, h)) = new_size {
+            window
+                .set_size(tauri::Size::Physical(tauri::PhysicalSize {
+                    width: w as u32,
+                    height: h as u32,
+                }))
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    })();
+
+    state.snap_resize_in_progress.store(false, Ordering::Release);
+    resize_result?;
 
     window
         .set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }))
@@ -376,16 +435,33 @@ pub async fn set_aspect_ratio(
         new_y = new_y.clamp(min_y, max_y);
     }
 
-    if window.is_maximized().unwrap_or(false) {
-        window.unmaximize().map_err(|e| e.to_string())?;
+    // Aspect-ratio snap is also a resize — start of a snap chain. Save
+    // pre-snap size if not already saved so a corner snap can restore.
+    if let Ok(mut pre) = state.pre_snap_size.lock() {
+        if pre.is_none() {
+            *pre = Some((cur_size.width, cur_size.height));
+        }
     }
 
-    window
-        .set_size(tauri::Size::Physical(tauri::PhysicalSize {
-            width: new_w as u32,
-            height: new_h as u32,
-        }))
-        .map_err(|e| e.to_string())?;
+    use std::sync::atomic::Ordering;
+    state.snap_resize_in_progress.store(true, Ordering::Release);
+
+    let resize_result = (|| -> Result<(), String> {
+        if window.is_maximized().unwrap_or(false) {
+            window.unmaximize().map_err(|e| e.to_string())?;
+        }
+        window
+            .set_size(tauri::Size::Physical(tauri::PhysicalSize {
+                width: new_w as u32,
+                height: new_h as u32,
+            }))
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    })();
+
+    state.snap_resize_in_progress.store(false, Ordering::Release);
+    resize_result?;
+
     window
         .set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: new_x, y: new_y }))
         .map_err(|e| e.to_string())?;

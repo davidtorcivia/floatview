@@ -98,6 +98,8 @@ pub fn run() {
                 save_thread: Mutex::new(Some(save_thread)),
                 shutdown_flag: AtomicBool::new(false),
                 tray: Mutex::new(None),
+                pre_snap_size: Mutex::new(None),
+                snap_resize_in_progress: AtomicBool::new(false),
             };
             app.manage(state);
 
@@ -152,12 +154,31 @@ pub fn run() {
             let app_handle = app.handle().clone();
             let window_clone = window.clone();
             window.on_window_event(move |event| {
-                if let tauri::WindowEvent::CloseRequested { .. } = event {
-                    let state = app_handle.state::<AppState>();
-                    if let Err(e) = persist_window_geometry(&window_clone, &state) {
-                        error!("Failed to persist window geometry on close: {}", e);
+                match event {
+                    tauri::WindowEvent::CloseRequested { .. } => {
+                        let state = app_handle.state::<AppState>();
+                        if let Err(e) = persist_window_geometry(&window_clone, &state) {
+                            error!("Failed to persist window geometry on close: {}", e);
+                        }
+                        // RunEvent::Exit will call shutdown() to flush and join the saver.
                     }
-                    // RunEvent::Exit will call shutdown() to flush and join the saver.
+                    tauri::WindowEvent::Resized(_) => {
+                        // Manual resize (drag of a window edge) clears the
+                        // pre-snap size so a subsequent corner snap honors
+                        // the user's new size instead of restoring stale
+                        // history. Snap-driven resizes set the in-progress
+                        // flag so they don't trigger this clear.
+                        let state = app_handle.state::<AppState>();
+                        if !state
+                            .snap_resize_in_progress
+                            .load(std::sync::atomic::Ordering::Acquire)
+                        {
+                            if let Ok(mut pre) = state.pre_snap_size.lock() {
+                                *pre = None;
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             });
 
@@ -408,6 +429,8 @@ mod lifecycle_tests {
                 save_thread: Mutex::new(Some(save_thread)),
                 shutdown_flag: AtomicBool::new(false),
                 tray: Mutex::new(None),
+                pre_snap_size: Mutex::new(None),
+                snap_resize_in_progress: AtomicBool::new(false),
             };
 
             StateFixture { state, temp }

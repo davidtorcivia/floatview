@@ -14,6 +14,12 @@ use tracing::{error, warn};
 
 use crate::config::AppConfig;
 
+/// Window dimensions remembered across a snap chain so corner/center
+/// snaps can restore the user's pre-snap size after a halves/thirds/
+/// aspect resize. Cleared on a manual resize and on each corner snap
+/// that consumed it.
+pub type PreSnapSize = (u32, u32);
+
 /// Callback that flips a boolean tray state (a check mark, typically).
 pub type TrayBoolSetter = Box<dyn Fn(bool) + Send + Sync>;
 
@@ -57,6 +63,16 @@ pub struct AppState {
     /// Tray menu callbacks. `None` before the tray is built, or in
     /// tests that don't set up a tray. Populated by `tray::setup_tray`.
     pub tray: Mutex<Option<TraySetters>>,
+    /// Window size at the start of a snap chain. Saved by halves/thirds/
+    /// aspect snaps; restored (and cleared) by corner/center snaps so the
+    /// window snaps back to the user's "real" size when they go to a
+    /// corner. Cleared by manual user resizes.
+    pub pre_snap_size: Mutex<Option<PreSnapSize>>,
+    /// True while a snap-driven `set_size` / `unmaximize` is in flight,
+    /// so the window's `Resized` event handler can distinguish
+    /// programmatic resizes from manual ones (only the latter clears
+    /// `pre_snap_size`).
+    pub snap_resize_in_progress: AtomicBool,
 }
 
 /// Constant-time token check would be nice, but this is a local IPC token

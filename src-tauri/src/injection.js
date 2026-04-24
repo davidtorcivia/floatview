@@ -273,11 +273,20 @@
             opacity: 0;
             pointer-events: auto;
             user-select: none;
-            -webkit-app-region: no-drag;
+            /* Strip itself is the drag handle. Buttons, URL bar, and
+               sliders explicitly set no-drag so they remain interactive;
+               empty padding/gap regions become the title-bar-style grab
+               surface (Spotify mini-player / Discord pattern). */
+            -webkit-app-region: drag;
+            cursor: grab;
             border: none;
             border-radius: 12px;
             box-shadow: 0 8px 24px rgba(0,0,0,0.15), 0 2px 4px rgba(0,0,0,0.1);
             z-index: 2147483647;
+        }
+
+        .strip:active {
+            cursor: grabbing;
         }
 
         .strip.visible {
@@ -1611,7 +1620,7 @@
         <input type="text" class="url-display" id="url-input" placeholder="Enter URL or search...">
         <button class="btn" id="btn-bookmark" title="Bookmark this page">${icons.bookmark}</button>
         <button class="btn" id="btn-lock" title="Click-through mode (${formatKey('Alt+Shift+D')})">${icons.lock}</button>
-        <button class="btn" id="btn-snap" title="Snap to corner">${icons.snap}</button>
+        <button class="btn" id="btn-snap" title="Snap & resize">${icons.snap}</button>
         <button class="btn" id="btn-crop" title="Crop/Zoom region">${icons.crop}</button>
         <button class="btn" id="btn-zoom-video" title="Zoom to video (${formatKey('Alt+Shift+V')})">${icons.zoomVideo}</button>
         <div class="divider"></div>
