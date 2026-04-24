@@ -35,22 +35,22 @@ Open **Settings** (gear icon in the control strip, or right-click the tray icon)
 Move your mouse to the **top edge** of the window. A dark control strip slides down with all your controls:
 
 ```
- [←] [→] [⟳] [Pin] [Recent] [Home] [________URL bar________] [★] [Lock] [Snap] [Crop] | [Opacity] [Settings] [-] [x]
+[←] [→] [⟳] [Pin] [Recent] [Home] [____URL bar____] [★] [Lock] [Snap] [Crop] [Zoom] | [Mute] [Opacity] [Settings] [-] [x]
 ```
 
-- **Back** -- Go back in history
-- **Forward** -- Go forward in history
-- **Refresh** -- Reload the current page
+- **Back / Forward / Refresh** -- Page navigation
 - **Pin** -- Toggle always-on-top
 - **Recent** -- Dropdown of your recent URLs
 - **Home** -- Navigate to your configured home URL
-- **URL bar** -- Shows current URL, type a new one and press Enter to navigate (non-URL input searches DuckDuckGo)
-- **Bookmark (★)** -- Bookmark/unbookmark the current page (right-click to open bookmarks list)
+- **URL bar** -- Shows the current URL. Type a new one and press Enter to navigate; non-URL input searches DuckDuckGo
+- **Bookmark (★)** -- Bookmark/unbookmark the current page (right-click for bookmarks list)
 - **Lock** -- Toggle click-through mode (clicks pass through the window)
-- **Snap** -- Snap the window to a screen corner or center
-- **Crop** -- Crop and zoom into a region of the page
-- **Opacity slider** -- Drag to adjust window transparency (10%-100%)
-- **Settings** -- Open the settings panel
+- **Snap** -- Open a panel to position or resize the window: corners, halves (left/right/top/bottom), thirds (left/center/right), or common aspect ratios (16:9, 4:3, 21:9, 1:1, 9:16). Aspect ratios are smart — they shrink whichever side is over-sized, keeping the closer one
+- **Crop** -- Click and drag to select a region of the page; the window zooms into just that region. Click again to clear
+- **Zoom to Video** -- Auto-detect the largest `<video>` on the page and zoom to it. Click again to restore
+- **Mute** -- Mute/unmute all audio on the page. **Right-click** opens a vertical volume slider
+- **Opacity slider** -- Adjust window transparency (10%-100%). Toolbar stays readable even at low values
+- **Settings** -- Open the settings panel (click again to close)
 - **Minimize (-)** -- Minimize to the system tray
 - **Close (x)** -- Close the application
 
@@ -76,6 +76,11 @@ These work globally, even when FloatView isn't focused:
 | Play/pause media | `Alt+Shift+P` | `⌥⇧P` |
 | Skip forward | `Alt+Shift+Right` | `⌥⇧Right` |
 | Skip back | `Alt+Shift+Left` | `⌥⇧Left` |
+| Mute/unmute media | `Alt+Shift+M` | `⌥⇧M` |
+| Zoom to largest video | `Alt+Shift+V` | `⌥⇧V` |
+| Force-show control strip | `Alt+Shift+S` | `⌥⇧S` |
+
+The last one is an emergency escape hatch — if click-through mode (or a hostile page) ever leaves the strip stuck, this hotkey forces it back on screen.
 
 These only work when the window is focused:
 
@@ -83,6 +88,8 @@ These only work when the window is focused:
 |---|---|---|
 | Show control strip and focus URL bar | `Ctrl+L` | `⌘L` |
 | Hide control strip | `Escape` | `Escape` |
+
+**Rebinding hotkeys:** Open Settings → Keyboard Shortcuts. Click any binding, press your new combination (a modifier like Ctrl/Alt/Shift is required for non-F-keys), and it saves automatically. A small reset arrow appears next to any binding you've changed; click it to restore that single binding to default. Or hit **Reset all** to restore everything.
 
 ### 6. System tray
 
@@ -92,43 +99,59 @@ FloatView lives in your system tray. **Left-click** the tray icon to show/hide t
 
 Press `Alt+Shift+D` to make the window completely transparent to mouse clicks -- everything passes through to the window behind it. The control strip hides automatically. To exit click-through mode:
 - Press `Alt+Shift+D` again, or
-- Right-click the tray icon and select **Exit Click-Through Mode**
+- Right-click the tray icon and uncheck **Click-Through Mode**, or
+- Press `Alt+Shift+S` to force-show the control strip (then click the lock icon)
 
 ## Features
 
+**Window**
 - **Always on Top** -- Stays above all other windows (toggle with hotkey or tray menu)
-- **Adjustable Opacity** -- 10% to 100% transparency via slider or hotkeys
-- **Click-Through Mode** -- Window becomes invisible to mouse input
-- **Configurable Home URL** -- Set your default page; navigate back with the Home button
-- **Smart URL Bar** -- Enter a URL to navigate, or type a search query to search DuckDuckGo
-- **Bookmarks** -- Save favorite pages; star icon toggles bookmark, right-click for list
-- **Navigation Controls** -- Back, forward, and refresh buttons in the control strip
-- **First-Run Tutorial** -- Interactive onboarding for new users
+- **Adjustable Opacity** -- 10% to 100% transparency via slider or hotkeys; toolbar stays readable even at low values
+- **Click-Through Mode** -- Window becomes invisible to mouse input; emergency hotkey to recover
 - **Borderless & Resizable** -- Clean look with native resize handles
-- **HDR Support** -- Uses system webview for correct HDR rendering (unlike Electron)
-- **Shadow DOM Control Strip** -- Injected UI that never breaks the page you're viewing
-- **Persistent State** -- Remembers window position, size, opacity, and last URL across restarts
-- **Crash Recovery** -- Geometry auto-saved every 30 seconds; config backed up on write
-- **System Tray** -- Minimize to tray, quick controls via right-click menu
-- **Global Hotkeys** -- Control everything without switching focus
-- **Single Instance** -- Opening FloatView again brings the existing window to front
-- **Snap to Corners** -- Quickly position the window at any screen corner or center
-- **Crop/Zoom** -- Select and zoom into a region of the page for focused viewing
+- **Smart Snap Panel** -- Position to corners/halves/thirds, or resize to common aspect ratios (16:9, 4:3, 21:9, 1:1, 9:16). Aspect resize is smart -- shrinks whichever side is over-sized
+- **Crop/Zoom** -- Drag-select a region of the page to zoom into
+- **Zoom to Video** -- One-click zoom to the largest video on the page; restores on second click
+- **HDR Support** -- Uses the system webview for correct HDR rendering (unlike Electron)
+
+**Browsing**
+- **Smart URL Bar** -- Enter a URL to navigate, or type a search query to search DuckDuckGo
+- **Configurable Home URL** -- Set your default page; navigate back with the Home button
+- **Bookmarks** -- Save favorite pages; star icon toggles bookmark, right-click for list
+- **Navigation Controls** -- Back, forward, refresh
 - **Auto-Refresh** -- Automatically reload the page on a configurable interval (1 min to 1 hour)
 - **Window Title** -- Title bar updates to match the current page
 - **Clear Site Data** -- Clear cookies, localStorage, and sessionStorage from settings
-- **In-App Updates** -- Check from Settings, install from tray menu
+
+**Audio**
+- **Mute** -- Mute/unmute all audio on the page (toolbar button or `Alt+Shift+M`)
+- **Volume Slider** -- Right-click the mute button for a vertical slider that controls all `<video>`/`<audio>` on the page
+
+**System integration**
+- **System Tray** -- Minimize to tray, quick controls via right-click menu
+- **Global Hotkeys** -- Control pin/click-through/opacity/media/mute/zoom/visibility without switching focus. Fully **rebindable** in Settings
+- **Single Instance** -- Opening FloatView again brings the existing window to front
+- **In-App Updates** -- Check from Settings, install from the tray menu
+
+**Reliability**
+- **Persistent State** -- Remembers window position, size, opacity, and last URL across restarts
+- **Crash Recovery** -- Geometry auto-saved every 30 seconds; config backed up on every write
+- **Force-Show Control Strip** -- Emergency hotkey (`Alt+Shift+S`) to recover the strip if a page hides it or click-through mode strands you
+- **Shadow DOM Control Strip** -- Injected UI never breaks the page you're viewing
+
+**Polish**
+- **First-Run Tutorial** -- Interactive onboarding for new users
 - **Cross-Platform** -- Windows and macOS
 - **Tiny Footprint** -- ~3MB binary, uses system webview
 
 ## Configuration
 
-Settings are stored in a platform-specific config directory and are managed automatically:
+FloatView is configured entirely through the in-app **Settings** panel (gear icon in the control strip). Settings are stored in a platform-specific config directory:
 
 - **Windows:** `%APPDATA%\com.floatview.app\config.json`
 - **macOS:** `~/Library/Application Support/com.floatview.app/config.json`
 
-You can edit the file directly to customize hotkeys or other settings:
+You normally don't need to touch this file -- everything (home URL, hotkeys, opacity, auto-refresh, bookmarks) can be edited from Settings. Direct editing is for power users or recovery from a corrupt config. A `.bak` snapshot is created on every write.
 
 ```json
 {
@@ -148,14 +171,17 @@ You can edit the file directly to customize hotkeys or other settings:
   "auto_refresh_minutes": 0,
   "bookmarks": [],
   "hotkeys": {
-    "toggle_on_top": "Alt+Shift+T",
-    "toggle_locked": "Alt+Shift+D",
-    "opacity_up": "Alt+Shift+Up",
-    "opacity_down": "Alt+Shift+Down",
+    "toggle_on_top":     "Alt+Shift+T",
+    "toggle_locked":     "Alt+Shift+D",
+    "opacity_up":        "Alt+Shift+Up",
+    "opacity_down":      "Alt+Shift+Down",
     "toggle_visibility": "Alt+Shift+H",
-    "media_play_pause": "Alt+Shift+P",
-    "media_next": "Alt+Shift+Right",
-    "media_previous": "Alt+Shift+Left"
+    "media_play_pause":  "Alt+Shift+P",
+    "media_next":        "Alt+Shift+Right",
+    "media_previous":    "Alt+Shift+Left",
+    "media_mute":        "Alt+Shift+M",
+    "zoom_video":        "Alt+Shift+V",
+    "show_strip":        "Alt+Shift+S"
   }
 }
 ```
@@ -197,7 +223,7 @@ src/index.html              -- Landing page (URL input)
 src-tauri/src/main.rs       -- Rust backend (commands, hotkeys, tray, platform interop)
 src-tauri/src/config.rs     -- Config types with serde
 src-tauri/src/opacity.rs    -- Cross-platform opacity management
-src-tauri/src/injection.js  -- Shadow DOM control strip + tutorial (~2300 lines)
+src-tauri/src/injection.js  -- Shadow DOM control strip + tutorial (~4000 lines)
 ```
 
 ### Why not Electron?

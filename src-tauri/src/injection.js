@@ -1956,6 +1956,11 @@
     let cropOverlayEl = null;
 
     function enterCropSelection() {
+        // Guard against repeat clicks. Without this, each click stacks
+        // another overlay (each with its own dimming + listeners), and
+        // the compounded background opacity blacks out the page in a
+        // way only Esc-spam can recover.
+        if (cropOverlayEl) return;
         cropOverlayEl = document.createElement('div');
         cropOverlayEl.className = 'crop-overlay';
         const instructions = document.createElement('div');
