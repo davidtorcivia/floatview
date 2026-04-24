@@ -120,7 +120,10 @@ The drag bar uses `-webkit-app-region: drag` for native WebView2 drag handling. 
 | `update_config` | Update config fields | `commands.rs` |
 | `set_url` | Set the last_url and recent list | `commands.rs` |
 | `save_window_geometry` | Persist current geometry | `commands.rs` |
-| `snap_window` | Snap window to corner/center | `commands.rs` |
+| `snap_window` | Snap window to corner/center, half, or third (resizes for halves/thirds) | `commands.rs` |
+| `set_aspect_ratio` | Resize window to a `"W:H"` aspect ratio around its current center | `commands.rs` |
+| `pause_global_hotkeys` | Drop all global shortcut registrations (used during hotkey rebind) | `commands.rs` |
+| `resume_global_hotkeys` | Re-register global shortcuts from current config | `commands.rs` |
 | `open_settings` | Emit open-settings event | `commands.rs` |
 | `close_window` | Close window | `commands.rs` |
 | `maximize_toggle` | Maximize/unmaximize window | `commands.rs` |
@@ -295,3 +298,5 @@ Run unit tests in `src-tauri/` (via `cargo test`). Test manually:
 15. Test tray quit preserves geometry
 16. Test media hotkeys target the most recently interacted player
 17. Test error-page redirect only fires on actual browser errors
+18. Test snap dropdown sub-sections: position corners, halves, thirds, and aspect ratios (16:9 / 4:3 / 21:9 / 1:1 / 9:16) — each section's buttons should fire correctly and the popup should stay inside the viewport
+19. Test hotkey rebinding from settings: click a binding, press a new combo, confirm it persists and the new combo fires immediately. Test Esc-cancel, "Modifier required" guard for unmodified non-F-keys, and Reset to defaults. While capturing, confirm pressing the *current* binding does not fire its action

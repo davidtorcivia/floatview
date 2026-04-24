@@ -206,6 +206,21 @@
 
     const style = document.createElement('style');
     style.textContent = `
+        :host, :root {
+            /* Crafted easing curves. swift = brisk hover; spring = playful
+               snap with overshoot; out = smooth-into-place. */
+            --fv-swift: cubic-bezier(0.4, 0, 0.2, 1);
+            --fv-out:   cubic-bezier(0.22, 0.9, 0.36, 1.05);
+            --fv-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+            --fv-press: cubic-bezier(0.4, 0, 0.6, 1);
+
+            --fv-accent:        rgba(200, 140, 80, 1);
+            --fv-accent-glow:   rgba(220, 170, 110, 0.55);
+            --fv-accent-soft:   rgba(200, 140, 80, 0.18);
+            --fv-accent-fill:   rgba(200, 140, 80, 0.4);
+            --fv-accent-text:   #e8b87a;
+        }
+
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
         .drag-bar {
@@ -285,7 +300,11 @@
             align-items: center;
             justify-content: center;
             line-height: 0;
-            transition: all 0.1s;
+            transition:
+                background 0.18s var(--fv-swift),
+                color 0.18s var(--fv-swift),
+                transform 0.18s var(--fv-out),
+                box-shadow 0.22s var(--fv-out);
         }
 
         .btn svg {
@@ -296,20 +315,47 @@
             stroke-width: 2;
             stroke-linecap: round;
             stroke-linejoin: round;
+            transition: transform 0.2s var(--fv-spring);
         }
 
         .btn:hover {
             background: rgba(255,255,255,0.1);
             color: #fff;
+            transform: translateY(-1px);
         }
 
-        .btn.active {
-            background: rgba(200, 140, 80, 0.4);
-            color: #e8b87a;
+        .btn:hover svg {
+            transform: scale(1.06);
         }
 
         .btn:active {
-            background: rgba(255,255,255,0.2);
+            background: rgba(255,255,255,0.18);
+            transform: translateY(0) scale(0.92);
+            transition:
+                background 0.06s var(--fv-press),
+                transform 0.06s var(--fv-press);
+        }
+
+        .btn:active svg {
+            transform: scale(0.94);
+            transition: transform 0.06s var(--fv-press);
+        }
+
+        .btn.active {
+            background:
+                linear-gradient(135deg, rgba(200, 140, 80, 0.42), rgba(220, 170, 110, 0.34));
+            color: var(--fv-accent-text);
+            box-shadow:
+                inset 0 0 0 1px rgba(220, 170, 110, 0.18),
+                0 0 14px -4px var(--fv-accent-glow);
+        }
+
+        .btn.active:hover {
+            background:
+                linear-gradient(135deg, rgba(210, 150, 90, 0.5), rgba(230, 180, 120, 0.42));
+            box-shadow:
+                inset 0 0 0 1px rgba(220, 170, 110, 0.28),
+                0 0 18px -3px var(--fv-accent-glow);
         }
 
         /* Brief visual "nope" for feature buttons that couldn't act
@@ -318,6 +364,27 @@
             background: rgba(244, 67, 54, 0.35);
             color: #fff;
             transition: background 0.15s ease-out, color 0.15s ease-out;
+        }
+
+        /* Refresh-on-click spin. Triggered by JS — page navigation
+           starts immediately, so the animation is mostly visual
+           confirmation in the brief window before reload kicks in. */
+        @keyframes fv-spin-once {
+            to { transform: rotate(360deg); }
+        }
+        .btn.spinning svg {
+            animation: fv-spin-once 0.5s var(--fv-out);
+            transform-origin: 50% 50%;
+        }
+
+        /* Bookmark star pop on toggle. */
+        @keyframes fv-pop {
+            0%   { transform: scale(1); }
+            40%  { transform: scale(1.35); }
+            100% { transform: scale(1); }
+        }
+        .btn.popping svg {
+            animation: fv-pop 0.34s var(--fv-spring);
         }
 
         .url-display {
@@ -334,11 +401,21 @@
             font-family: inherit;
             line-height: 36px;
             outline: none;
+            transition:
+                background 0.18s var(--fv-swift),
+                border-color 0.2s var(--fv-out),
+                box-shadow 0.24s var(--fv-out);
+        }
+
+        .url-display:hover:not(:focus) {
+            background: rgba(255,255,255,0.10);
+            border-color: rgba(255,255,255,0.16);
         }
 
         .url-display:focus {
-            background: rgba(255,255,255,0.12);
-            border-color: rgba(200, 140, 80, 0.5);
+            background: rgba(255,255,255,0.14);
+            border-color: rgba(220, 170, 110, 0.55);
+            box-shadow: 0 0 0 3px rgba(200, 140, 80, 0.14);
         }
 
         .url-display::placeholder {
@@ -370,6 +447,19 @@
             cursor: pointer;
             margin-top: -6.5px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+            transition:
+                box-shadow 0.2s var(--fv-out),
+                transform 0.18s var(--fv-spring);
+        }
+
+        .opacity-slider:hover::-webkit-slider-thumb {
+            transform: scale(1.12);
+            box-shadow: 0 2px 6px rgba(0,0,0,0.28), 0 0 0 4px rgba(200, 140, 80, 0.18);
+        }
+
+        .opacity-slider:active::-webkit-slider-thumb {
+            transform: scale(1.18);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.35), 0 0 0 5px rgba(200, 140, 80, 0.28);
         }
 
         .divider {
@@ -413,8 +503,28 @@
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            transition: background 0.1s;
             border-bottom: 1px solid rgba(255,255,255,0.05);
+            position: relative;
+            transition:
+                background 0.16s var(--fv-swift),
+                padding-left 0.18s var(--fv-out),
+                color 0.16s var(--fv-swift);
+        }
+
+        .recent-item::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 6px;
+            bottom: 6px;
+            width: 3px;
+            background: var(--fv-accent);
+            border-radius: 0 2px 2px 0;
+            opacity: 0;
+            transform: scaleY(0.4);
+            transition:
+                opacity 0.18s var(--fv-out),
+                transform 0.22s var(--fv-spring);
         }
 
         .recent-item:last-child {
@@ -422,7 +532,14 @@
         }
 
         .recent-item:hover {
-            background: rgba(255,255,255,0.08);
+            background: rgba(200, 140, 80, 0.12);
+            padding-left: 22px;
+            color: #fff;
+        }
+
+        .recent-item:hover::before {
+            opacity: 1;
+            transform: scaleY(1);
         }
 
         .recent-item.current {
@@ -440,7 +557,7 @@
             position: fixed;
             top: 50%;
             left: 50%;
-            transform: translate(-50%, -50%) scale(0.96);
+            transform: translate(-50%, calc(-50% + 6px)) scale(0.95);
             background: linear-gradient(160deg, rgba(46, 46, 52, 0.78), rgba(36, 36, 42, 0.68));
             backdrop-filter: blur(28px);
             -webkit-backdrop-filter: blur(28px);
@@ -457,7 +574,9 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             color: #fff;
             opacity: 0;
-            transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+            transition:
+                opacity 0.22s var(--fv-out),
+                transform 0.32s var(--fv-spring);
         }
 
         .settings-modal.visible {
@@ -468,7 +587,7 @@
 
         .settings-modal.hidden {
             opacity: 0;
-            transform: translate(-50%, -50%) scale(0.96);
+            transform: translate(-50%, calc(-50% + 6px)) scale(0.95);
         }
 
         .settings-scroll {
@@ -520,6 +639,12 @@
         .settings-close-btn:hover {
             background: rgba(220, 60, 50, 0.9);
             color: #fff;
+            transform: rotate(90deg) scale(1.06);
+            box-shadow: 0 4px 16px rgba(220, 60, 50, 0.4);
+        }
+
+        .settings-close-btn:active {
+            transform: rotate(90deg) scale(0.94);
         }
 
         .settings-section {
@@ -554,18 +679,117 @@
             font-family: 'SF Mono', Monaco, monospace;
         }
 
+        .hotkey-btn {
+            font-size: 12px;
+            color: rgba(255,255,255,0.7);
+            font-family: 'SF Mono', Monaco, monospace;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid transparent;
+            padding: 5px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            min-width: 130px;
+            text-align: center;
+            transition:
+                background 0.16s var(--fv-swift),
+                color 0.16s var(--fv-swift),
+                border-color 0.18s var(--fv-out),
+                transform 0.16s var(--fv-out),
+                box-shadow 0.22s var(--fv-out);
+        }
+
+        .hotkey-btn:hover {
+            background: rgba(255,255,255,0.14);
+            color: #fff;
+            transform: translateY(-1px);
+            box-shadow: 0 3px 10px rgba(0,0,0,0.18);
+        }
+
+        .hotkey-btn:active {
+            transform: translateY(0) scale(0.97);
+        }
+
+        .hotkey-btn.capturing {
+            background: rgba(200, 140, 80, 0.18);
+            border-color: rgba(200, 140, 80, 0.7);
+            color: #fff;
+            animation: hotkey-pulse 1.2s ease-in-out infinite;
+        }
+
+        @keyframes hotkey-pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(200, 140, 80, 0.0); }
+            50%      { box-shadow: 0 0 0 3px rgba(200, 140, 80, 0.18); }
+        }
+
+        .hotkey-controls {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .hotkey-reset-btn {
+            background: transparent;
+            border: none;
+            padding: 4px;
+            cursor: pointer;
+            color: rgba(255,255,255,0.4);
+            opacity: 0.6;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.12s;
+        }
+
+        .hotkey-reset-btn:hover {
+            background: rgba(255,255,255,0.08);
+            color: #fff;
+            opacity: 1;
+        }
+
+        .hotkey-reset-btn svg {
+            width: 14px;
+            height: 14px;
+            stroke: currentColor;
+            stroke-width: 2;
+            fill: none;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .hotkey-reset-btn.appearing {
+            animation: hotkey-reset-appear 0.36s var(--fv-spring);
+        }
+
+        @keyframes hotkey-reset-appear {
+            0%   { opacity: 0; transform: translateX(8px) scale(0.6); }
+            60%  { opacity: 1; transform: translateX(-1px) scale(1.08); }
+            100% { opacity: 0.6; transform: translateX(0) scale(1); }
+        }
+
         .toggle-switch {
             position: relative;
             width: 50px;
             height: 28px;
-            background: rgba(255,255,255,0.15);
+            background: rgba(255,255,255,0.14);
             border-radius: 14px;
             cursor: pointer;
-            transition: background 0.2s;
+            transition:
+                background 0.28s var(--fv-out),
+                box-shadow 0.28s var(--fv-out);
+        }
+
+        .toggle-switch:hover {
+            background: rgba(255,255,255,0.18);
         }
 
         .toggle-switch.active {
-            background: rgba(52, 199, 89, 0.9);
+            background: linear-gradient(135deg, rgba(200, 140, 80, 0.88), rgba(220, 170, 110, 0.95));
+            box-shadow: 0 0 16px -3px var(--fv-accent-glow);
+        }
+
+        .toggle-switch.active:hover {
+            box-shadow: 0 0 20px -2px var(--fv-accent-glow);
         }
 
         .toggle-switch::after {
@@ -577,12 +801,20 @@
             height: 22px;
             background: #fff;
             border-radius: 50%;
-            transition: transform 0.2s;
+            transition: transform 0.32s var(--fv-spring), box-shadow 0.28s var(--fv-out);
             box-shadow: 0 2px 4px rgba(0,0,0,0.2);
         }
 
         .toggle-switch.active::after {
             transform: translateX(22px);
+            box-shadow: 0 2px 6px rgba(0,0,0,0.28), 0 0 0 1px rgba(255,255,255,0.4);
+        }
+
+        .toggle-switch:active::after {
+            transform: scale(0.92);
+        }
+        .toggle-switch.active:active::after {
+            transform: translateX(22px) scale(0.92);
         }
 
         .settings-slider-row {
@@ -621,13 +853,26 @@
             font-size: 14px;
             font-family: inherit;
             cursor: pointer;
-            transition: all 0.15s ease;
+            transition:
+                background 0.18s var(--fv-swift),
+                border-color 0.18s var(--fv-swift),
+                transform 0.16s var(--fv-out),
+                box-shadow 0.22s var(--fv-out);
             min-height: 44px;
         }
 
         .settings-btn:hover {
             background: rgba(255,255,255,0.12);
-            border-color: rgba(255,255,255,0.2);
+            border-color: rgba(255,255,255,0.22);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.16);
+        }
+
+        .settings-btn:active {
+            transform: translateY(0) scale(0.97);
+            transition:
+                background 0.06s var(--fv-press),
+                transform 0.06s var(--fv-press);
         }
 
         .settings-btn.danger {
@@ -636,17 +881,21 @@
         }
 
         .settings-btn.danger:hover {
-            background: rgba(244, 67, 54, 0.35);
+            background: rgba(244, 67, 54, 0.38);
+            border-color: rgba(244, 67, 54, 0.6);
+            box-shadow: 0 4px 14px rgba(244, 67, 54, 0.22);
         }
 
         .settings-btn.primary {
-            background: rgba(200, 140, 80, 0.35);
+            background: linear-gradient(135deg, rgba(200, 140, 80, 0.4), rgba(220, 170, 110, 0.32));
             border-color: rgba(200, 140, 80, 0.6);
             color: #fff;
         }
 
         .settings-btn.primary:hover {
-            background: rgba(200, 140, 80, 0.5);
+            background: linear-gradient(135deg, rgba(210, 150, 90, 0.55), rgba(230, 180, 120, 0.45));
+            border-color: rgba(220, 170, 110, 0.75);
+            box-shadow: 0 4px 16px -2px var(--fv-accent-glow);
         }
 
         .settings-footer {
@@ -686,10 +935,13 @@
             font-size: 14px;
             color: #fff;
             cursor: pointer;
-            transition: background 0.1s;
             display: flex;
             align-items: center;
             gap: 10px;
+            transition:
+                background 0.16s var(--fv-swift),
+                padding-left 0.18s var(--fv-out),
+                color 0.16s var(--fv-swift);
         }
 
         .context-menu-item svg {
@@ -701,10 +953,17 @@
             stroke-linecap: round;
             stroke-linejoin: round;
             opacity: 0.7;
+            transition: opacity 0.16s var(--fv-swift), transform 0.2s var(--fv-spring);
         }
 
         .context-menu-item:hover {
-            background: rgba(255,255,255,0.08);
+            background: rgba(200, 140, 80, 0.14);
+            padding-left: 22px;
+        }
+
+        .context-menu-item:hover svg {
+            opacity: 1;
+            transform: scale(1.06);
         }
 
         .context-menu-item.disabled {
@@ -725,16 +984,21 @@
             right: 0;
             bottom: 0;
             background: rgba(0,0,0,0.3);
-            backdrop-filter: blur(2px);
-            -webkit-backdrop-filter: blur(2px);
+            backdrop-filter: blur(0px);
+            -webkit-backdrop-filter: blur(0px);
             z-index: 2147483646;
             pointer-events: none;
             opacity: 0;
-            transition: opacity 0.2s ease-out;
+            transition:
+                opacity 0.28s var(--fv-out),
+                backdrop-filter 0.32s var(--fv-out),
+                -webkit-backdrop-filter 0.32s var(--fv-out);
         }
 
         .modal-overlay.visible {
             opacity: 1;
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
             pointer-events: auto;
         }
 
@@ -801,7 +1065,7 @@
             position: fixed;
             top: 50%;
             left: 50%;
-            transform: translate(-50%, -50%) scale(0.96);
+            transform: translate(-50%, calc(-50% + 6px)) scale(0.95);
             background: linear-gradient(160deg, rgba(46, 46, 52, 0.78), rgba(36, 36, 42, 0.68));
             backdrop-filter: blur(28px);
             -webkit-backdrop-filter: blur(28px);
@@ -818,7 +1082,9 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             color: #fff;
             opacity: 0;
-            transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+            transition:
+                opacity 0.22s var(--fv-out),
+                transform 0.32s var(--fv-spring);
         }
 
         .tutorial-modal.visible {
@@ -829,7 +1095,7 @@
 
         .tutorial-modal.hidden {
             opacity: 0;
-            transform: translate(-50%, -50%) scale(0.96);
+            transform: translate(-50%, calc(-50% + 6px)) scale(0.95);
         }
 
         .tutorial-step {
@@ -959,11 +1225,17 @@
             height: 8px;
             border-radius: 50%;
             background: rgba(255,255,255,0.2);
-            transition: background 0.2s;
+            transition:
+                background 0.28s var(--fv-out),
+                box-shadow 0.32s var(--fv-out),
+                width 0.28s var(--fv-spring);
         }
 
         .tutorial-dot.active {
-            background: rgba(200, 140, 80, 0.7);
+            background: var(--fv-accent);
+            width: 22px;
+            border-radius: 4px;
+            box-shadow: 0 0 12px -2px var(--fv-accent-glow);
         }
 
         .snap-popup {
@@ -982,10 +1254,10 @@
             opacity: 0;
             transform: translateY(-4px) scale(0.97);
             transition: opacity 0.18s ease-out, transform 0.18s ease-out;
-            display: grid;
-            grid-template-columns: repeat(3, 36px);
-            grid-template-rows: repeat(2, 28px);
-            gap: 4px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            min-width: 156px;
         }
 
         .snap-popup.visible {
@@ -994,24 +1266,105 @@
             pointer-events: auto;
         }
 
+        .snap-section {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .snap-section + .snap-section {
+            border-top: 1px solid rgba(255,255,255,0.06);
+            padding-top: 6px;
+        }
+
+        .snap-section-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: rgba(255,255,255,0.45);
+            padding: 0 4px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        .snap-grid {
+            display: grid;
+            gap: 4px;
+        }
+
+        .snap-grid.pos-grid {
+            grid-template-columns: repeat(3, 36px);
+            grid-template-rows: repeat(2, 28px);
+        }
+
+        .snap-grid.half-grid {
+            grid-template-columns: repeat(4, 36px);
+            grid-template-rows: 28px;
+        }
+
+        .snap-grid.third-grid {
+            grid-template-columns: repeat(3, 36px);
+            grid-template-rows: 28px;
+        }
+
+        .snap-grid.aspect-grid {
+            grid-template-columns: repeat(3, 1fr);
+            grid-auto-rows: 24px;
+        }
+
         .snap-cell {
             background: rgba(255,255,255,0.06);
             border: none;
             border-radius: 6px;
             cursor: pointer;
-            color: rgba(255,255,255,0.5);
+            color: rgba(255,255,255,0.55);
             font-size: 14px;
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: all 0.1s;
             padding: 0;
+            transition:
+                background 0.16s var(--fv-swift),
+                color 0.16s var(--fv-swift),
+                transform 0.18s var(--fv-spring),
+                box-shadow 0.18s var(--fv-out);
         }
 
         .snap-cell:hover {
             background: rgba(200, 140, 80, 0.3);
             color: #fff;
+            transform: scale(1.06);
+            box-shadow: 0 2px 8px -2px rgba(200, 140, 80, 0.45);
         }
+
+        .snap-cell:active {
+            transform: scale(0.94);
+            transition:
+                background 0.06s var(--fv-press),
+                transform 0.06s var(--fv-press);
+        }
+
+        .snap-cell.aspect-cell {
+            font-size: 11px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-weight: 500;
+            letter-spacing: 0.02em;
+        }
+
+        /* Stagger sub-section reveal when snap popup opens. The section
+           starts slightly offset and fades up; ordering by section gives
+           a satisfying cascade without feeling slow. */
+        @keyframes fv-section-rise {
+            from { opacity: 0; transform: translateY(4px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        .snap-popup.visible .snap-section {
+            animation: fv-section-rise 0.28s var(--fv-out) both;
+        }
+        .snap-popup.visible .snap-section:nth-child(1) { animation-delay: 0.00s; }
+        .snap-popup.visible .snap-section:nth-child(2) { animation-delay: 0.04s; }
+        .snap-popup.visible .snap-section:nth-child(3) { animation-delay: 0.08s; }
+        .snap-popup.visible .snap-section:nth-child(4) { animation-delay: 0.12s; }
 
         .crop-overlay {
             position: fixed;
@@ -1287,11 +1640,43 @@
     const snapPopup = document.createElement('div');
     snapPopup.className = 'snap-popup';
     setInner(snapPopup, `
-        <button class="snap-cell" data-pos="top-left" title="Top Left">&#8598;</button>
-        <button class="snap-cell" data-pos="center" title="Center">&#9678;</button>
-        <button class="snap-cell" data-pos="top-right" title="Top Right">&#8599;</button>
-        <button class="snap-cell" data-pos="bottom-left" title="Bottom Left">&#8601;</button>
-        <button class="snap-cell" data-pos="bottom-right" title="Bottom Right" style="grid-column:3;">&#8600;</button>
+        <div class="snap-section">
+            <div class="snap-section-label">Position</div>
+            <div class="snap-grid pos-grid">
+                <button class="snap-cell" data-pos="top-left" title="Top Left">&#8598;</button>
+                <button class="snap-cell" data-pos="center" title="Center">&#9678;</button>
+                <button class="snap-cell" data-pos="top-right" title="Top Right">&#8599;</button>
+                <button class="snap-cell" data-pos="bottom-left" title="Bottom Left">&#8601;</button>
+                <button class="snap-cell" data-pos="bottom-right" title="Bottom Right" style="grid-column:3;">&#8600;</button>
+            </div>
+        </div>
+        <div class="snap-section">
+            <div class="snap-section-label">Halves</div>
+            <div class="snap-grid half-grid">
+                <button class="snap-cell" data-pos="left-half" title="Left Half">&#9680;</button>
+                <button class="snap-cell" data-pos="right-half" title="Right Half">&#9681;</button>
+                <button class="snap-cell" data-pos="top-half" title="Top Half">&#9683;</button>
+                <button class="snap-cell" data-pos="bottom-half" title="Bottom Half">&#9682;</button>
+            </div>
+        </div>
+        <div class="snap-section">
+            <div class="snap-section-label">Thirds</div>
+            <div class="snap-grid third-grid">
+                <button class="snap-cell aspect-cell" data-pos="left-third" title="Left Third">L &#8531;</button>
+                <button class="snap-cell aspect-cell" data-pos="center-third" title="Center Third">C &#8531;</button>
+                <button class="snap-cell aspect-cell" data-pos="right-third" title="Right Third">R &#8531;</button>
+            </div>
+        </div>
+        <div class="snap-section">
+            <div class="snap-section-label">Aspect</div>
+            <div class="snap-grid aspect-grid">
+                <button class="snap-cell aspect-cell" data-aspect="16:9" title="Resize to 16:9">16:9</button>
+                <button class="snap-cell aspect-cell" data-aspect="4:3" title="Resize to 4:3">4:3</button>
+                <button class="snap-cell aspect-cell" data-aspect="21:9" title="Resize to 21:9">21:9</button>
+                <button class="snap-cell aspect-cell" data-aspect="1:1" title="Resize to 1:1">1:1</button>
+                <button class="snap-cell aspect-cell" data-aspect="9:16" title="Resize to 9:16">9:16</button>
+            </div>
+        </div>
     `);
     shadow.appendChild(snapPopup);
 
@@ -1355,45 +1740,13 @@
 
         <div class="settings-section">
             <div class="settings-section-title">Keyboard Shortcuts</div>
+            <div id="hotkey-list"></div>
             <div class="settings-row">
-                <span class="settings-label">Toggle Always on Top</span>
-                <span class="settings-value" id="hotkey-ontop">${formatKey('Alt+Shift+T')}</span>
+                <span class="settings-label" style="color:rgba(255,255,255,0.5);font-size:12px;">Click a binding to record a new combination. Modifier required (Ctrl/Alt/Shift).</span>
             </div>
             <div class="settings-row">
-                <span class="settings-label">Toggle Click-Through</span>
-                <span class="settings-value" id="hotkey-locked">${formatKey('Alt+Shift+D')}</span>
-            </div>
-            <div class="settings-row">
-                <span class="settings-label">Opacity Up/Down</span>
-                <span class="settings-value" id="hotkey-opacity">${formatKey('Alt+Shift+Up/Down')}</span>
-            </div>
-            <div class="settings-row">
-                <span class="settings-label">Show/Hide Window</span>
-                <span class="settings-value" id="hotkey-visibility">${formatKey('Alt+Shift+H')}</span>
-            </div>
-            <div class="settings-row">
-                <span class="settings-label">Play/Pause Media</span>
-                <span class="settings-value" id="hotkey-playpause">${formatKey('Alt+Shift+P')}</span>
-            </div>
-            <div class="settings-row">
-                <span class="settings-label">Skip Forward</span>
-                <span class="settings-value" id="hotkey-next">${formatKey('Alt+Shift+Right')}</span>
-            </div>
-            <div class="settings-row">
-                <span class="settings-label">Skip Back</span>
-                <span class="settings-value" id="hotkey-previous">${formatKey('Alt+Shift+Left')}</span>
-            </div>
-            <div class="settings-row">
-                <span class="settings-label">Mute</span>
-                <span class="settings-value" id="hotkey-mute">${formatKey('Alt+Shift+M')}</span>
-            </div>
-            <div class="settings-row">
-                <span class="settings-label">Zoom to Video</span>
-                <span class="settings-value" id="hotkey-zoom-video">${formatKey('Alt+Shift+V')}</span>
-            </div>
-            <div class="settings-row">
-                <span class="settings-label">Force-show Control Strip</span>
-                <span class="settings-value" id="hotkey-show-strip">${formatKey('Alt+Shift+S')}</span>
+                <span class="settings-label">Reset all to defaults</span>
+                <button class="settings-btn" id="btn-reset-hotkeys">Reset</button>
             </div>
         </div>
 
@@ -2493,14 +2846,23 @@
     });
 
     btnSettings.addEventListener('click', async () => {
-        openSettings();
+        if (settingsModal.classList.contains('visible')) {
+            closeSettings();
+        } else {
+            openSettings();
+        }
     });
 
     // Snap popup
     function positionSnapPopup() {
         const rect = btnSnap.getBoundingClientRect();
         snapPopup.style.top = (rect.bottom + 8) + 'px';
-        snapPopup.style.left = rect.left + 'px';
+        // Anchor at the button's left, but keep the (now wider) popup
+        // inside the viewport with an 8px margin.
+        snapPopup.style.left = '0px';
+        const popupWidth = snapPopup.getBoundingClientRect().width || 156;
+        const maxLeft = Math.max(8, window.innerWidth - popupWidth - 8);
+        snapPopup.style.left = Math.min(rect.left, maxLeft) + 'px';
     }
 
     btnSnap.addEventListener('click', (e) => {
@@ -2514,12 +2876,15 @@
 
     snapPopup.addEventListener('click', async (e) => {
         e.stopPropagation();
-        const pos = e.target.dataset.pos;
-        if (pos) {
-            snapPopup.classList.remove('visible');
-            await invoke('snap_window', { position: pos });
-            snapFlash();
+        const target = e.target.closest('[data-pos], [data-aspect]');
+        if (!target) return;
+        snapPopup.classList.remove('visible');
+        if (target.dataset.pos) {
+            await invoke('snap_window', { position: target.dataset.pos });
+        } else if (target.dataset.aspect) {
+            await invoke('set_aspect_ratio', { ratio: target.dataset.aspect });
         }
+        snapFlash();
     });
 
     // Context menu snap items
@@ -2552,7 +2917,15 @@
     // Navigation buttons
     btnBack.addEventListener('click', () => { window.history.back(); });
     btnForward.addEventListener('click', () => { window.history.forward(); });
-    btnRefresh.addEventListener('click', () => { window.location.reload(); });
+    btnRefresh.addEventListener('click', () => {
+        // Brief spin before reload — confirmation that the click landed.
+        // The page reload arrives a few hundred ms later (network-dependent).
+        btnRefresh.classList.remove('spinning');
+        // Force reflow so re-adding the class re-fires the animation.
+        void btnRefresh.offsetWidth;
+        btnRefresh.classList.add('spinning');
+        window.location.reload();
+    });
 
     // Bookmark functions
     function isBookmarked(url) {
@@ -2646,9 +3019,16 @@
         return freshConfig ? freshConfig.bookmarks || [] : config ? config.bookmarks || [] : [];
     }
 
+    function bookmarkPop() {
+        btnBookmark.classList.remove('popping');
+        void btnBookmark.offsetWidth;
+        btnBookmark.classList.add('popping');
+    }
+
     btnBookmark.addEventListener('click', async (e) => {
         e.stopPropagation();
         const currentUrl = window.location.href;
+        bookmarkPop();
         if (isBookmarked(currentUrl)) {
             await invoke('remove_bookmark', { url: currentUrl });
             if (config) {
@@ -2722,16 +3102,8 @@
     const btnClearBookmarks = settingsModal.querySelector('#btn-clear-bookmarks');
     const btnClearSiteData = settingsModal.querySelector('#btn-clear-site-data');
     const btnCloseSettings = settingsModal.querySelector('#btn-close-settings');
-    const hotkeyOntop = settingsModal.querySelector('#hotkey-ontop');
-    const hotkeyLocked = settingsModal.querySelector('#hotkey-locked');
-    const hotkeyOpacity = settingsModal.querySelector('#hotkey-opacity');
-    const hotkeyVisibility = settingsModal.querySelector('#hotkey-visibility');
-    const hotkeyPlayPause = settingsModal.querySelector('#hotkey-playpause');
-    const hotkeyNext = settingsModal.querySelector('#hotkey-next');
-    const hotkeyPrevious = settingsModal.querySelector('#hotkey-previous');
-    const hotkeyMute = settingsModal.querySelector('#hotkey-mute');
-    const hotkeyZoomVideo = settingsModal.querySelector('#hotkey-zoom-video');
-    const hotkeyShowStrip = settingsModal.querySelector('#hotkey-show-strip');
+    const hotkeyList = settingsModal.querySelector('#hotkey-list');
+    const btnResetHotkeys = settingsModal.querySelector('#btn-reset-hotkeys');
     const btnCheckUpdates = settingsModal.querySelector('#btn-check-updates');
     const updateStatus = settingsModal.querySelector('#update-status');
     const settingsVersion = settingsModal.querySelector('#settings-version');
@@ -2815,28 +3187,247 @@
         }
     });
 
+    // Hotkey rebinding. Order matters — this is the order rows render
+    // in the settings panel.
+    const HOTKEY_DEFINITIONS = [
+        { field: 'toggle_on_top',     label: 'Toggle Always on Top',    default: 'Alt+Shift+T' },
+        { field: 'toggle_locked',     label: 'Toggle Click-Through',    default: 'Alt+Shift+D' },
+        { field: 'opacity_up',        label: 'Opacity Up',              default: 'Alt+Shift+Up' },
+        { field: 'opacity_down',      label: 'Opacity Down',            default: 'Alt+Shift+Down' },
+        { field: 'toggle_visibility', label: 'Show/Hide Window',        default: 'Alt+Shift+H' },
+        { field: 'media_play_pause',  label: 'Play/Pause Media',        default: 'Alt+Shift+P' },
+        { field: 'media_next',        label: 'Skip Forward',            default: 'Alt+Shift+Right' },
+        { field: 'media_previous',    label: 'Skip Back',               default: 'Alt+Shift+Left' },
+        { field: 'media_mute',        label: 'Mute',                    default: 'Alt+Shift+M' },
+        { field: 'zoom_video',        label: 'Zoom to Video',           default: 'Alt+Shift+V' },
+        { field: 'show_strip',        label: 'Force-show Control Strip', default: 'Alt+Shift+S' },
+    ];
+
+    // Tracks isDefault per field across renders so we can fire the
+    // fade-in animation only on the default → diverged transition,
+    // not on every render (which would re-animate on settings open).
+    let _prevHotkeyDefaultState = null;
+
+    function renderHotkeyRows() {
+        if (!hotkeyList) return;
+        const hk = (config && config.hotkeys) || {};
+        const newState = {};
+        const rows = HOTKEY_DEFINITIONS.map(def => {
+            const value = hk[def.field] || def.default;
+            const display = formatKey(value);
+            const isDefault = value === def.default;
+            newState[def.field] = isDefault;
+            // Reset icon only renders when the binding diverges from
+            // default — avoids visual noise for the common case.
+            const resetBtn = isDefault
+                ? ''
+                : '<button class="hotkey-reset-btn" data-reset-hotkey="' + def.field +
+                  '" title="Reset to ' + formatKey(def.default) + '">' + icons.refresh + '</button>';
+            return (
+                '<div class="settings-row">' +
+                    '<span class="settings-label">' + def.label + '</span>' +
+                    '<div class="hotkey-controls">' +
+                        resetBtn +
+                        '<button class="hotkey-btn" data-hotkey="' + def.field + '" title="Click to rebind">' +
+                            display +
+                        '</button>' +
+                    '</div>' +
+                '</div>'
+            );
+        }).join('');
+        setInner(hotkeyList, rows);
+
+        // Animate icons that just appeared (default → non-default since
+        // last render). Skip on first render so reopening settings with
+        // pre-existing custom bindings doesn't trigger a wave of fade-ins.
+        if (_prevHotkeyDefaultState) {
+            for (const def of HOTKEY_DEFINITIONS) {
+                if (_prevHotkeyDefaultState[def.field] && !newState[def.field]) {
+                    const btn = hotkeyList.querySelector('[data-reset-hotkey="' + def.field + '"]');
+                    if (btn) btn.classList.add('appearing');
+                }
+            }
+        }
+        _prevHotkeyDefaultState = newState;
+    }
+
+    // Translate a keydown event into the "Mod+Mod+Key" shape that
+    // hotkeys.rs::parse_hotkey understands. Returns null if the event
+    // can't be a valid binding (pure modifier, unknown key, no modifier
+    // on a non-F-key).
+    function keyEventToHotkeyString(e) {
+        const mods = [];
+        if (e.ctrlKey) mods.push('Ctrl');
+        if (e.shiftKey) mods.push('Shift');
+        if (e.altKey) mods.push('Alt');
+        if (e.metaKey) mods.push('Super');
+
+        const code = e.code || '';
+        const key = e.key || '';
+
+        let keyName = null;
+        if (/^Key[A-Z]$/.test(code)) keyName = code.slice(3);
+        else if (/^Digit[0-9]$/.test(code)) keyName = code.slice(5);
+        else if (/^F([1-9]|1[0-2])$/.test(code)) keyName = code;
+        else if (key === 'ArrowUp') keyName = 'Up';
+        else if (key === 'ArrowDown') keyName = 'Down';
+        else if (key === 'ArrowLeft') keyName = 'Left';
+        else if (key === 'ArrowRight') keyName = 'Right';
+        else if (code === 'Space' || key === ' ') keyName = 'Space';
+        else if (key === 'Enter') keyName = 'Enter';
+        else if (key === 'Tab') keyName = 'Tab';
+        else if (key === 'Backspace') keyName = 'Backspace';
+        else if (key === 'Delete') keyName = 'Delete';
+        else if (key === 'Home') keyName = 'Home';
+        else if (key === 'End') keyName = 'End';
+        else if (key === 'PageUp') keyName = 'PageUp';
+        else if (key === 'PageDown') keyName = 'PageDown';
+        else if (code === 'BracketLeft') keyName = '[';
+        else if (code === 'BracketRight') keyName = ']';
+        else if (code === 'Semicolon') keyName = ';';
+        else if (code === 'Quote') keyName = "'";
+        else if (code === 'Comma') keyName = ',';
+        else if (code === 'Period') keyName = '.';
+        else if (code === 'Slash') keyName = '/';
+        else if (code === 'Backslash') keyName = '\\';
+        else if (code === 'Backquote') keyName = '`';
+        else if (code === 'Minus') keyName = '-';
+        else if (code === 'Equal') keyName = '=';
+
+        if (!keyName) return null;
+        // Bare F1-F12 is a useful exception; everything else needs a
+        // modifier to avoid swallowing single keystrokes globally.
+        if (mods.length === 0 && !/^F([1-9]|1[0-2])$/.test(keyName)) return null;
+        return [...mods, keyName].join('+');
+    }
+
+    let _activeHotkeyCapture = null; // { button, keyHandler, blurHandler, original, savedHotkey }
+
+    function endHotkeyCapture(restore) {
+        if (!_activeHotkeyCapture) return;
+        const cap = _activeHotkeyCapture;
+        _activeHotkeyCapture = null;
+        window.removeEventListener('keydown', cap.keyHandler, true);
+        cap.button.removeEventListener('blur', cap.blurHandler);
+        cap.button.classList.remove('capturing');
+        if (restore) cap.button.textContent = cap.original;
+        // Resume even if the user committed: the save path's
+        // re_register_hotkeys also registers, but a second register on
+        // top of the same set is harmless and keeps the cleanup simple.
+        if (!cap.savedHotkey) {
+            invoke('resume_global_hotkeys').catch(() => {});
+        }
+    }
+
+    async function startHotkeyCapture(button) {
+        if (_activeHotkeyCapture) endHotkeyCapture(true);
+        const original = button.textContent;
+        button.classList.add('capturing');
+        button.textContent = 'Press keys…';
+        // Pause OS-level hotkeys so pressing an existing binding while
+        // capturing doesn't toggle pin/lock/etc.
+        invoke('pause_global_hotkeys').catch(() => {});
+
+        const blurHandler = () => endHotkeyCapture(true);
+
+        const keyHandler = async (e) => {
+            // Pure modifier: still composing.
+            if (['Control', 'Shift', 'Alt', 'Meta', 'OS'].includes(e.key)) return;
+
+            // Unmodified Escape cancels; modified Escape would be a valid
+            // binding (Ctrl+Shift+Esc, etc.).
+            if (e.key === 'Escape' && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) {
+                e.preventDefault();
+                e.stopPropagation();
+                endHotkeyCapture(true);
+                return;
+            }
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            const hotkey = keyEventToHotkeyString(e);
+            if (!hotkey) {
+                button.textContent = 'Modifier required';
+                setTimeout(() => {
+                    if (_activeHotkeyCapture && _activeHotkeyCapture.button === button) {
+                        button.textContent = 'Press keys…';
+                    }
+                }, 1000);
+                return;
+            }
+
+            const field = button.dataset.hotkey;
+            // Mark saved=true so endHotkeyCapture skips the resume call:
+            // applyHotkey → update_config → re_register_hotkeys handles it.
+            if (_activeHotkeyCapture) _activeHotkeyCapture.savedHotkey = true;
+            endHotkeyCapture(false);
+            button.textContent = formatKey(hotkey);
+            await applyHotkey(field, hotkey);
+        };
+
+        _activeHotkeyCapture = { button, keyHandler, blurHandler, original, savedHotkey: false };
+        window.addEventListener('keydown', keyHandler, true);
+        button.addEventListener('blur', blurHandler);
+        button.focus();
+    }
+
+    async function applyHotkey(field, value) {
+        if (!config) return;
+        if (!config.hotkeys) config.hotkeys = {};
+        config.hotkeys[field] = value;
+        await invoke('update_config', { config });
+        // Re-render synchronously instead of waiting on the
+        // config-changed event round-trip — that path can race with
+        // the user's next action and leave the row showing the new
+        // text but no reset icon until settings is reopened.
+        renderHotkeyRows();
+    }
+
+    async function resetSingleHotkey(field) {
+        const def = HOTKEY_DEFINITIONS.find(d => d.field === field);
+        if (!def || !config) return;
+        if (_activeHotkeyCapture) endHotkeyCapture(true);
+        if (!config.hotkeys) config.hotkeys = {};
+        if (config.hotkeys[field] === def.default) return;
+        config.hotkeys[field] = def.default;
+        await invoke('update_config', { config });
+        renderHotkeyRows();
+    }
+
+    if (hotkeyList) {
+        hotkeyList.addEventListener('click', (e) => {
+            const resetTarget = e.target.closest('[data-reset-hotkey]');
+            if (resetTarget) {
+                e.stopPropagation();
+                resetSingleHotkey(resetTarget.dataset.resetHotkey);
+                return;
+            }
+            const btn = e.target.closest('.hotkey-btn');
+            if (!btn) return;
+            startHotkeyCapture(btn);
+        });
+    }
+
+    if (btnResetHotkeys) {
+        btnResetHotkeys.addEventListener('click', async () => {
+            if (!config) return;
+            if (_activeHotkeyCapture) endHotkeyCapture(true);
+            const defaults = {};
+            for (const def of HOTKEY_DEFINITIONS) defaults[def.field] = def.default;
+            config.hotkeys = defaults;
+            await invoke('update_config', { config });
+            renderHotkeyRows();
+        });
+    }
+
     function openSettings() {
         if (config) {
             settingOntop.classList.toggle('active', config.window.always_on_top);
             settingLocked.classList.toggle('active', config.window.locked);
             settingOpacity.value = opacityToSlider(config.window.opacity);
             settingOpacityValue.textContent = Math.round(config.window.opacity * 100);
-            if (config.hotkeys) {
-                hotkeyOntop.textContent = formatKey(config.hotkeys.toggle_on_top || 'Alt+Shift+T');
-                hotkeyLocked.textContent = formatKey(config.hotkeys.toggle_locked || 'Alt+Shift+D');
-                hotkeyOpacity.textContent = formatKey(
-                    (config.hotkeys.opacity_up || 'Alt+Shift+Up') +
-                    '/' +
-                    (config.hotkeys.opacity_down || 'Alt+Shift+Down')
-                );
-                hotkeyVisibility.textContent = formatKey(config.hotkeys.toggle_visibility || 'Alt+Shift+H');
-                hotkeyPlayPause.textContent = formatKey(config.hotkeys.media_play_pause || 'Alt+Shift+P');
-                hotkeyNext.textContent = formatKey(config.hotkeys.media_next || 'Alt+Shift+Right');
-                hotkeyPrevious.textContent = formatKey(config.hotkeys.media_previous || 'Alt+Shift+Left');
-                hotkeyMute.textContent = formatKey(config.hotkeys.media_mute || 'Alt+Shift+M');
-                hotkeyZoomVideo.textContent = formatKey(config.hotkeys.zoom_video || 'Alt+Shift+V');
-                hotkeyShowStrip.textContent = formatKey(config.hotkeys.show_strip || 'Alt+Shift+S');
-            }
+            renderHotkeyRows();
             settingHomeUrl.value = config.home_url || 'https://www.google.com';
             settingAutoRefresh.value = String(config.auto_refresh_minutes || 0);
         }
@@ -2846,6 +3437,7 @@
     }
 
     function closeSettings() {
+        if (_activeHotkeyCapture) endHotkeyCapture(true);
         settingsModal.classList.remove('visible');
         settingsModal.classList.add('hidden');
         modalOverlay.classList.remove('visible');
@@ -3258,6 +3850,12 @@
             updateRecentDropdown();
             updateBookmarkIcon();
             updateBookmarksDropdown();
+            // Keep the rebinding UI in sync if the modal is open and the
+            // change came from somewhere other than the click-to-capture
+            // flow (e.g. external config edit, reset button).
+            if (!settingsModal.classList.contains('hidden')) {
+                renderHotkeyRows();
+            }
         });
 
         listen('open-settings', () => {

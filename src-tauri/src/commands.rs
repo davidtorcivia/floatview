@@ -15,7 +15,7 @@ use crate::opacity;
 use crate::ops;
 use crate::state::{authorize_command, AppState};
 use crate::urls::{normalize_url, urls_match};
-use crate::window_state::persist_window_geometry;
+use crate::window_state::{persist_window_geometry, MIN_WINDOW_SIZE};
 
 #[tauri::command]
 pub async fn get_config(
@@ -36,10 +36,16 @@ pub async fn update_config(
 ) -> Result<(), String> {
     authorize_command(&state, &token, "update_config")?;
     let config = sanitize_config(config);
-    {
+    let hotkeys_changed = {
         let mut current = state.config.lock().map_err(|e| e.to_string())?;
+        let changed = current.hotkeys != config.hotkeys;
         *current = config.clone();
         save_config(&state, &current);
+        changed
+    };
+
+    if hotkeys_changed {
+        crate::hotkeys::re_register_hotkeys(&app);
     }
 
     app.emit("config-changed", &config)
@@ -143,6 +149,35 @@ pub async fn save_window_geometry(
     persist_window_geometry(&window, &state)
 }
 
+/// Drop all global shortcut registrations until `resume_global_hotkeys`
+/// is called. Used by the settings UI's hotkey-rebind capture so an
+/// existing binding doesn't fire while the user is recording a new one.
+#[tauri::command]
+pub async fn pause_global_hotkeys(
+    app: AppHandle,
+    state: tauri::State<'_, AppState>,
+    token: String,
+) -> Result<(), String> {
+    authorize_command(&state, &token, "pause_global_hotkeys")?;
+    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+    let _ = app.global_shortcut().unregister_all();
+    Ok(())
+}
+
+/// Re-register global shortcuts from the current config. Pair with
+/// `pause_global_hotkeys`; safe to call when nothing is paused (the
+/// underlying register is idempotent on overwrite).
+#[tauri::command]
+pub async fn resume_global_hotkeys(
+    app: AppHandle,
+    state: tauri::State<'_, AppState>,
+    token: String,
+) -> Result<(), String> {
+    authorize_command(&state, &token, "resume_global_hotkeys")?;
+    crate::hotkeys::register_hotkeys(&app);
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn snap_window(
     window: WebviewWindow,
@@ -171,12 +206,52 @@ pub async fn snap_window(
     let ww = win_size.width as i32;
     let wh = win_size.height as i32;
 
-    let (x, y) = match position.as_str() {
-        "top-left" => (mx + padding, my + padding),
-        "top-right" => (mx + mw - ww - padding, my + padding),
-        "bottom-left" => (mx + padding, my + mh - wh - padding),
-        "bottom-right" => (mx + mw - ww - padding, my + mh - wh - padding),
-        "center" => (mx + (mw - ww) / 2, my + (mh - wh) / 2),
+    // Halves and thirds resize as well as position. Corners and center
+    // keep the user's current size — long-standing behavior.
+    //
+    // Padding budget per layout: edges + inter-tile gaps. Halves use
+    // 3*padding (left edge, gap, right edge), thirds use 4*padding.
+    let (x, y, new_size) = match position.as_str() {
+        "top-left" => (mx + padding, my + padding, None),
+        "top-right" => (mx + mw - ww - padding, my + padding, None),
+        "bottom-left" => (mx + padding, my + mh - wh - padding, None),
+        "bottom-right" => (mx + mw - ww - padding, my + mh - wh - padding, None),
+        "center" => (mx + (mw - ww) / 2, my + (mh - wh) / 2, None),
+        "left-half" => {
+            let w = ((mw - 3 * padding) / 2).max(MIN_WINDOW_SIZE);
+            let h = (mh - 2 * padding).max(MIN_WINDOW_SIZE);
+            (mx + padding, my + padding, Some((w, h)))
+        }
+        "right-half" => {
+            let w = ((mw - 3 * padding) / 2).max(MIN_WINDOW_SIZE);
+            let h = (mh - 2 * padding).max(MIN_WINDOW_SIZE);
+            (mx + mw - padding - w, my + padding, Some((w, h)))
+        }
+        "top-half" => {
+            let w = (mw - 2 * padding).max(MIN_WINDOW_SIZE);
+            let h = ((mh - 3 * padding) / 2).max(MIN_WINDOW_SIZE);
+            (mx + padding, my + padding, Some((w, h)))
+        }
+        "bottom-half" => {
+            let w = (mw - 2 * padding).max(MIN_WINDOW_SIZE);
+            let h = ((mh - 3 * padding) / 2).max(MIN_WINDOW_SIZE);
+            (mx + padding, my + mh - padding - h, Some((w, h)))
+        }
+        "left-third" => {
+            let w = ((mw - 4 * padding) / 3).max(MIN_WINDOW_SIZE);
+            let h = (mh - 2 * padding).max(MIN_WINDOW_SIZE);
+            (mx + padding, my + padding, Some((w, h)))
+        }
+        "center-third" => {
+            let w = ((mw - 4 * padding) / 3).max(MIN_WINDOW_SIZE);
+            let h = (mh - 2 * padding).max(MIN_WINDOW_SIZE);
+            (mx + (mw - w) / 2, my + padding, Some((w, h)))
+        }
+        "right-third" => {
+            let w = ((mw - 4 * padding) / 3).max(MIN_WINDOW_SIZE);
+            let h = (mh - 2 * padding).max(MIN_WINDOW_SIZE);
+            (mx + mw - padding - w, my + padding, Some((w, h)))
+        }
         _ => return Err("Invalid snap position".to_string()),
     };
 
@@ -184,8 +259,135 @@ pub async fn snap_window(
         window.unmaximize().map_err(|e| e.to_string())?;
     }
 
+    if let Some((w, h)) = new_size {
+        window
+            .set_size(tauri::Size::Physical(tauri::PhysicalSize {
+                width: w as u32,
+                height: h as u32,
+            }))
+            .map_err(|e| e.to_string())?;
+    }
+
     window
         .set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }))
+        .map_err(|e| e.to_string())?;
+
+    persist_window_geometry(&window, &state)?;
+    Ok(())
+}
+
+/// Parse an "N:M" aspect ratio string into a `(width, height)` pair.
+/// Both components must be non-zero positive integers ≤ 1000 to filter
+/// out absurd inputs that could overflow the resize math.
+fn parse_aspect_ratio(s: &str) -> Option<(u32, u32)> {
+    let mut parts = s.splitn(2, ':');
+    let w: u32 = parts.next()?.trim().parse().ok()?;
+    let h: u32 = parts.next()?.trim().parse().ok()?;
+    if w == 0 || h == 0 || w > 1000 || h > 1000 {
+        return None;
+    }
+    Some((w, h))
+}
+
+/// Compute the new window size for a target aspect ratio. Picks the
+/// "shrink the over-sized side" interpretation: if the window is too
+/// wide for the target ratio, shrink width and keep height; if too tall,
+/// shrink height and keep width. Always shrinks, never grows, so the
+/// result never exceeds the original on either axis (apart from a 1px
+/// rounding wiggle).
+fn aspect_resize(cur_w: i32, cur_h: i32, rw: u32, rh: u32) -> (i32, i32) {
+    let rw_i = rw as i64;
+    let rh_i = rh as i64;
+    let cw = cur_w as i64;
+    let ch = cur_h as i64;
+    // cw/ch > rw/rh  ⇔  cw*rh > ch*rw  (no float division)
+    if cw * rh_i > ch * rw_i {
+        let new_w = ((ch * rw_i + rh_i / 2) / rh_i) as i32;
+        (new_w, cur_h)
+    } else {
+        let new_h = ((cw * rh_i + rw_i / 2) / rw_i) as i32;
+        (cur_w, new_h)
+    }
+}
+
+/// Resize the window to honor a target aspect ratio. Picks whichever
+/// dimension is over-sized for the ratio and shrinks just that one,
+/// keeping the other untouched (so a wide window narrows, a tall window
+/// shortens). Result is re-centered on the original window center and
+/// clamped to monitor bounds.
+#[tauri::command]
+pub async fn set_aspect_ratio(
+    window: WebviewWindow,
+    state: tauri::State<'_, AppState>,
+    ratio: String,
+    token: String,
+) -> Result<(), String> {
+    authorize_command(&state, &token, "set_aspect_ratio")?;
+
+    let (rw, rh) = parse_aspect_ratio(&ratio)
+        .ok_or_else(|| format!("Invalid aspect ratio: {}", ratio))?;
+
+    let monitor = window
+        .current_monitor()
+        .map_err(|e| e.to_string())?
+        .or(window.primary_monitor().map_err(|e| e.to_string())?)
+        .ok_or("No monitor found")?;
+
+    let scale = window.scale_factor().map_err(|e| e.to_string())?;
+    let mon_pos = monitor.position();
+    let mon_size = monitor.size();
+    let cur_size = window.outer_size().map_err(|e| e.to_string())?;
+    let cur_pos = window.outer_position().map_err(|e| e.to_string())?;
+
+    let padding = (16.0 * scale) as i32;
+    let max_w = (mon_size.width as i32 - 2 * padding).max(MIN_WINDOW_SIZE);
+    let max_h = (mon_size.height as i32 - 2 * padding).max(MIN_WINDOW_SIZE);
+
+    let (mut new_w, mut new_h) =
+        aspect_resize(cur_size.width as i32, cur_size.height as i32, rw, rh);
+
+    // Defensive: if the window started larger than the monitor, the
+    // shrink-only result might still overflow. Scale both dims down
+    // proportionally to fit.
+    if new_h > max_h {
+        new_h = max_h;
+        new_w = ((new_h as f64) * (rw as f64) / (rh as f64)).round() as i32;
+    }
+    if new_w > max_w {
+        new_w = max_w;
+        new_h = ((new_w as f64) * (rh as f64) / (rw as f64)).round() as i32;
+    }
+    new_w = new_w.max(MIN_WINDOW_SIZE);
+    new_h = new_h.max(MIN_WINDOW_SIZE);
+
+    let center_x = cur_pos.x + cur_size.width as i32 / 2;
+    let center_y = cur_pos.y + cur_size.height as i32 / 2;
+    let mut new_x = center_x - new_w / 2;
+    let mut new_y = center_y - new_h / 2;
+
+    let min_x = mon_pos.x + padding;
+    let max_x = mon_pos.x + mon_size.width as i32 - new_w - padding;
+    let min_y = mon_pos.y + padding;
+    let max_y = mon_pos.y + mon_size.height as i32 - new_h - padding;
+    if max_x >= min_x {
+        new_x = new_x.clamp(min_x, max_x);
+    }
+    if max_y >= min_y {
+        new_y = new_y.clamp(min_y, max_y);
+    }
+
+    if window.is_maximized().unwrap_or(false) {
+        window.unmaximize().map_err(|e| e.to_string())?;
+    }
+
+    window
+        .set_size(tauri::Size::Physical(tauri::PhysicalSize {
+            width: new_w as u32,
+            height: new_h as u32,
+        }))
+        .map_err(|e| e.to_string())?;
+    window
+        .set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: new_x, y: new_y }))
         .map_err(|e| e.to_string())?;
 
     persist_window_geometry(&window, &state)?;
@@ -492,6 +694,65 @@ mod tests {
         let truncated = truncate_title(&title);
         assert!(truncated.is_char_boundary(truncated.len() - "...".len()));
         assert!(truncated.ends_with("..."));
+    }
+
+    #[test]
+    fn parse_aspect_ratio_accepts_common_ratios() {
+        assert_eq!(parse_aspect_ratio("16:9"), Some((16, 9)));
+        assert_eq!(parse_aspect_ratio("4:3"), Some((4, 3)));
+        assert_eq!(parse_aspect_ratio(" 21 : 9 "), Some((21, 9)));
+        assert_eq!(parse_aspect_ratio("1:1"), Some((1, 1)));
+    }
+
+    #[test]
+    fn aspect_resize_shrinks_width_when_too_wide() {
+        // 2000x500 → 16:9 should keep height and pull width to 16/9*500 ≈ 889
+        let (w, h) = aspect_resize(2000, 500, 16, 9);
+        assert_eq!(h, 500, "height must be preserved when window is too wide");
+        assert!((w - 889).abs() <= 1, "width should shrink to ~889, got {}", w);
+        assert!(w < 2000, "width should shrink, not grow");
+    }
+
+    #[test]
+    fn aspect_resize_shrinks_height_when_too_tall() {
+        // 400x1200 → 16:9 should keep width and pull height to 9/16*400 = 225
+        let (w, h) = aspect_resize(400, 1200, 16, 9);
+        assert_eq!(w, 400, "width must be preserved when window is too tall");
+        assert!((h - 225).abs() <= 1, "height should shrink to ~225, got {}", h);
+        assert!(h < 1200, "height should shrink, not grow");
+    }
+
+    #[test]
+    fn aspect_resize_already_at_ratio_is_a_noop() {
+        let (w, h) = aspect_resize(1600, 900, 16, 9);
+        assert_eq!((w, h), (1600, 900));
+    }
+
+    #[test]
+    fn aspect_resize_handles_square_target() {
+        // 1600x900 → 1:1 should pick the smaller dim (height) and shrink width
+        let (w, h) = aspect_resize(1600, 900, 1, 1);
+        assert_eq!(h, 900);
+        assert_eq!(w, 900);
+    }
+
+    #[test]
+    fn aspect_resize_handles_tall_target() {
+        // 1000x800 → 9:16: current ratio (1.25) > target (0.5625), so too wide
+        // → keep height, shrink width to 800 * 9/16 = 450
+        let (w, h) = aspect_resize(1000, 800, 9, 16);
+        assert_eq!(h, 800);
+        assert!((w - 450).abs() <= 1, "got width {}", w);
+    }
+
+    #[test]
+    fn parse_aspect_ratio_rejects_garbage() {
+        assert!(parse_aspect_ratio("16x9").is_none());
+        assert!(parse_aspect_ratio("0:9").is_none());
+        assert!(parse_aspect_ratio("16:0").is_none());
+        assert!(parse_aspect_ratio("9999:1").is_none());
+        assert!(parse_aspect_ratio("nope").is_none());
+        assert!(parse_aspect_ratio("").is_none());
     }
 
     #[test]

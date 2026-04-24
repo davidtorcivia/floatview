@@ -165,6 +165,18 @@ pub fn register_hotkeys(app: &AppHandle) {
     });
 }
 
+/// Drop every currently registered global shortcut and re-register from
+/// the latest config. Called from `update_config` after the user rebinds
+/// a hotkey via the settings UI. Errors during unregister are logged but
+/// not surfaced — the subsequent `register_hotkeys` will silently
+/// overwrite any stragglers that survived.
+pub fn re_register_hotkeys(app: &AppHandle) {
+    if let Err(e) = app.global_shortcut().unregister_all() {
+        warn!("Failed to unregister hotkeys before re-register: {}", e);
+    }
+    register_hotkeys(app);
+}
+
 /// Internal: parse + register one hotkey binding, logging on failure.
 ///
 /// `action` takes no arguments — captures are up to the caller. This
