@@ -5,7 +5,7 @@ use tauri::{Runtime, WebviewWindow};
 /// toolbar stays readable even when the page is nearly see-through; the
 /// injected stylesheet applies a complementary CSS opacity to page
 /// content so the *combined* visibility still matches the raw value.
-pub const WINDOW_ALPHA_FLOOR: f64 = 0.85;
+pub const WINDOW_ALPHA_FLOOR: f64 = 0.55;
 
 pub fn window_alpha_from_raw(raw: f64) -> f64 {
     let r = raw.clamp(0.0, 1.0);

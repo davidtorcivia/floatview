@@ -2450,6 +2450,7 @@
     function hideVolumePopup() {
         volumePopup.classList.remove('visible');
         btnMute.classList.remove('dropdown-open');
+        if (!strip.matches(':hover')) scheduleHide();
     }
 
     btnMute.addEventListener('click', (e) => {
@@ -2806,8 +2807,10 @@
 
     document.addEventListener('click', (e) => {
         if (!strip.contains(e.target) && !recentDropdown.contains(e.target) && !bookmarksDropdown.contains(e.target)) {
+            const hadDropdown = recentDropdown.classList.contains('visible') || bookmarksDropdown.classList.contains('visible');
             recentDropdown.classList.remove('visible');
             bookmarksDropdown.classList.remove('visible');
+            if (hadDropdown && !strip.matches(':hover')) scheduleHide();
         }
         if (!strip.contains(e.target) && !snapPopup.contains(e.target)) {
             snapPopup.classList.remove('visible');
@@ -3552,6 +3555,7 @@
         settingsModal.classList.remove('visible');
         settingsModal.classList.add('hidden');
         modalOverlay.classList.remove('visible');
+        if (!strip.matches(':hover')) scheduleHide();
     }
 
     settingHomeUrl.addEventListener('change', async () => {
@@ -3659,6 +3663,7 @@
 
     function hideContextMenu() {
         contextMenu.classList.remove('visible');
+        if (!strip.matches(':hover')) scheduleHide();
     }
 
     strip.addEventListener('contextmenu', (e) => {
@@ -3758,6 +3763,7 @@
         tutorialModal.classList.remove('visible');
         tutorialModal.classList.add('hidden');
         modalOverlay.classList.remove('visible');
+        if (!strip.matches(':hover')) scheduleHide();
         if (config) {
             config.first_run = false;
             await invoke('update_config', { config });
@@ -3901,11 +3907,15 @@
                 }
                 if (config) config.window.locked = value;
                 break;
-            case 'opacity':
-                opacitySlider.value = opacityToSlider(value);
+            case 'opacity': {
+                const sv = opacityToSlider(value);
+                opacitySlider.value = sv;
+                settingOpacity.value = sv;
+                settingOpacityValue.textContent = Math.round(value * 100);
                 applyContentOpacity(value);
                 if (config) config.window.opacity = value;
                 break;
+            }
             case 'open_settings':
                 container.style.display = '';
                 showStrip();
@@ -3933,7 +3943,10 @@
         const listen = window.__TAURI__.event.listen;
 
         listen('opacity-changed', (event) => {
-            opacitySlider.value = opacityToSlider(event.payload);
+            const sv = opacityToSlider(event.payload);
+            opacitySlider.value = sv;
+            settingOpacity.value = sv;
+            settingOpacityValue.textContent = Math.round(event.payload * 100);
             applyContentOpacity(event.payload);
             if (config) {
                 config.window.opacity = event.payload;
