@@ -5,12 +5,12 @@
 //! around helpers in `config_io`, `window_state`, etc.
 
 use tauri::{AppHandle, Emitter, WebviewWindow};
+use url::Url;
 use tauri_plugin_updater::UpdaterExt;
 
 use crate::browsing_data;
 use crate::config::{clamp_opacity, AppConfig, CropConfig};
 use crate::config_io::{persist_recent_url, sanitize_config, save_config, CROP_MIN_DIM};
-use crate::injection::js_navigate;
 use crate::opacity;
 use crate::ops;
 use crate::state::{authorize_command, AppState};
@@ -61,11 +61,10 @@ pub async fn navigate(
     token: String,
 ) -> Result<bool, String> {
     authorize_command(&state, &token, "navigate")?;
-    let url = normalize_url(&url)?;
-    persist_recent_url(&state, &url)?;
-    window
-        .eval(js_navigate(&url))
-        .map_err(|e| e.to_string())?;
+    let url_str = normalize_url(&url)?;
+    persist_recent_url(&state, &url_str)?;
+    let parsed = Url::parse(&url_str).map_err(|e| e.to_string())?;
+    window.navigate(parsed).map_err(|e| e.to_string())?;
     Ok(true)
 }
 

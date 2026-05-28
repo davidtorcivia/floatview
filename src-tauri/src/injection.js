@@ -3010,7 +3010,15 @@
     });
 
     // Navigation buttons
-    btnBack.addEventListener('click', () => { window.history.back(); });
+    btnBack.addEventListener('click', async () => {
+        if (window.history.length > 1) {
+            window.history.back();
+        } else {
+            // No history to go back to (e.g. app just opened on this page);
+            // fall through to home so the button always does something useful.
+            await invoke('navigate_home');
+        }
+    });
     btnForward.addEventListener('click', () => { window.history.forward(); });
     btnRefresh.addEventListener('click', () => {
         // Brief spin before reload — confirmation that the click landed.

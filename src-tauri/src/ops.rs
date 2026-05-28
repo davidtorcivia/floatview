@@ -17,10 +17,10 @@
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewWindow};
+use url::Url;
 
 use crate::config::clamp_opacity;
 use crate::config_io::save_config;
-use crate::injection::js_navigate;
 use crate::opacity;
 use crate::state::{update_tray_always_on_top, update_tray_locked, AppState};
 use crate::urls::{normalize_url, DEFAULT_HOME_URL};
@@ -110,10 +110,8 @@ pub fn navigate_home<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
         normalize_url(&config.home_url).unwrap_or_else(|_| DEFAULT_HOME_URL.to_string())
     };
 
-    let _ = window.eval("window.stop()");
-    window
-        .eval(js_navigate(&home_url))
-        .map_err(|e| e.to_string())?;
+    let parsed = Url::parse(&home_url).map_err(|e| e.to_string())?;
+    window.navigate(parsed).map_err(|e| e.to_string())?;
     Ok(())
 }
 
