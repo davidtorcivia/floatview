@@ -2638,6 +2638,7 @@
             item.textContent = url;
             item.addEventListener('click', async () => {
                 if (url && !item.classList.contains('current')) {
+                    recentDropdown.classList.remove('visible');
                     await navigateToUrl(url);
                 }
             });
@@ -2672,7 +2673,9 @@
                 !settingsModal.classList.contains('hidden') ||
                 recentDropdown.classList.contains('visible') ||
                 bookmarksDropdown.classList.contains('visible') ||
-                volumePopup.classList.contains('visible')) {
+                volumePopup.classList.contains('visible') ||
+                contextMenu.classList.contains('visible') ||
+                urlInput === document.activeElement) {
                 return;
             }
             hideStrip();
@@ -2774,8 +2777,10 @@
 
     function positionDropdown() {
         const rect = btnRecent.getBoundingClientRect();
-        recentDropdown.style.top = (rect.bottom + 8) + 'px';
+        const top = rect.bottom + 8;
+        recentDropdown.style.top = top + 'px';
         recentDropdown.style.left = rect.left + 'px';
+        recentDropdown.style.maxHeight = Math.max(80, window.innerHeight - top - 8) + 'px';
     }
 
     btnRecent.addEventListener('click', (e) => {
@@ -3079,8 +3084,10 @@
 
     function positionBookmarksDropdown() {
         const rect = btnBookmark.getBoundingClientRect();
-        bookmarksDropdown.style.top = (rect.bottom + 8) + 'px';
+        const top = rect.bottom + 8;
+        bookmarksDropdown.style.top = top + 'px';
         bookmarksDropdown.style.left = rect.left + 'px';
+        bookmarksDropdown.style.maxHeight = Math.max(80, window.innerHeight - top - 8) + 'px';
     }
 
     function urlsMatch(a, b) {
@@ -3512,6 +3519,8 @@
         settingsModal.classList.remove('hidden');
         settingsModal.classList.add('visible');
         modalOverlay.classList.add('visible');
+        const scrollEl = settingsModal.querySelector('.settings-scroll');
+        if (scrollEl) scrollEl.scrollTop = 0;
     }
 
     function closeSettings() {
@@ -3639,6 +3648,8 @@
             hideContextMenu();
         }
     });
+
+    window.addEventListener('blur', () => hideContextMenu());
 
     ctxSettings.addEventListener('click', () => {
         hideContextMenu();
