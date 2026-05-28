@@ -937,6 +937,7 @@
 
         .context-menu {
             position: fixed;
+            z-index: 2147483647;
             background: linear-gradient(160deg, rgba(46, 46, 52, 0.78), rgba(36, 36, 42, 0.68));
             backdrop-filter: blur(24px);
             -webkit-backdrop-filter: blur(24px);
@@ -2861,6 +2862,12 @@
             window.location.href = url;
         }
     }
+
+    // If the URL input loses focus while the mouse is outside the strip,
+    // schedule a hide so the strip doesn't stay open indefinitely.
+    urlInput.addEventListener('blur', () => {
+        if (!strip.matches(':hover')) scheduleHide();
+    });
 
     urlInput.addEventListener('keydown', async (e) => {
         if (e.key === 'Enter') {
