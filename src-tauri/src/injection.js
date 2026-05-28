@@ -350,6 +350,11 @@
             transition: transform 0.06s var(--fv-press);
         }
 
+        .btn:focus-visible {
+            outline: 2px solid rgba(200, 140, 80, 0.75);
+            outline-offset: 2px;
+        }
+
         .btn.active {
             background:
                 linear-gradient(135deg, rgba(200, 140, 80, 0.42), rgba(220, 170, 110, 0.34));
@@ -428,7 +433,7 @@
         }
 
         .url-display::placeholder {
-            color: rgba(255,255,255,0.4);
+            color: rgba(255,255,255,0.55);
         }
 
         .opacity-slider {
@@ -439,6 +444,10 @@
             -webkit-appearance: none;
             background: transparent;
             outline: none;
+        }
+
+        .opacity-slider:focus-visible::-webkit-slider-thumb {
+            box-shadow: 0 2px 6px rgba(0,0,0,0.28), 0 0 0 4px rgba(200, 140, 80, 0.45);
         }
 
         .opacity-slider::-webkit-slider-runnable-track {
@@ -718,6 +727,11 @@
             transform: translateY(0) scale(0.97);
         }
 
+        .hotkey-btn:focus-visible {
+            outline: 2px solid rgba(200, 140, 80, 0.75);
+            outline-offset: 2px;
+        }
+
         .hotkey-btn.capturing {
             background: rgba(200, 140, 80, 0.18);
             border-color: rgba(200, 140, 80, 0.7);
@@ -784,7 +798,7 @@
             border-radius: 14px;
             cursor: pointer;
             transition:
-                background 0.28s var(--fv-out),
+                background 0.32s var(--fv-spring),
                 box-shadow 0.28s var(--fv-out);
         }
 
@@ -882,6 +896,11 @@
             transition:
                 background 0.06s var(--fv-press),
                 transform 0.06s var(--fv-press);
+        }
+
+        .settings-btn:focus-visible {
+            outline: 2px solid rgba(200, 140, 80, 0.75);
+            outline-offset: 2px;
         }
 
         .settings-btn.danger {
@@ -982,7 +1001,7 @@
 
         .context-menu-divider {
             height: 1px;
-            background: rgba(255,255,255,0.08);
+            background: rgba(255,255,255,0.12);
             margin: 6px 0;
         }
 
@@ -1423,6 +1442,11 @@
             font-family: inherit;
             outline: none;
             cursor: pointer;
+        }
+
+        .settings-select:focus-visible {
+            outline: 2px solid rgba(200, 140, 80, 0.75);
+            outline-offset: 2px;
         }
 
         .settings-select option {
@@ -3028,6 +3052,10 @@
             removeBtn.style.opacity = '0.4';
             removeBtn.style.fontSize = '16px';
             removeBtn.style.flexShrink = '0';
+            removeBtn.style.padding = '2px 6px';
+            removeBtn.style.borderRadius = '4px';
+            removeBtn.style.lineHeight = '1';
+            removeBtn.style.marginRight = '-4px';
             removeBtn.addEventListener('mouseenter', () => { removeBtn.style.opacity = '1'; });
             removeBtn.addEventListener('mouseleave', () => { removeBtn.style.opacity = '0.4'; });
             removeBtn.addEventListener('click', async (e) => {
