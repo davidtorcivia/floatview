@@ -2023,6 +2023,8 @@
     // and to toggle the zoom button's active state independently from
     // the manual-crop button.
     let zoomVideoActive = false;
+    let _cropTransitionTimer = null;
+    let _removeCropTimer = null;
 
     // `persist` controls whether the crop reaches the saved config.
     // Default true preserves the historical behavior for user-initiated
@@ -2045,7 +2047,8 @@
             requestAnimationFrame(() => {
                 document.body.style.transform = 'translate(' + tx + 'px, ' + ty + 'px) scale(' + scale + ')';
             });
-            setTimeout(() => { document.body.style.transition = ''; }, 450);
+            clearTimeout(_cropTransitionTimer);
+            _cropTransitionTimer = setTimeout(() => { document.body.style.transition = ''; }, 450);
         } else {
             document.body.style.transform = 'translate(' + tx + 'px, ' + ty + 'px) scale(' + scale + ')';
         }
@@ -2063,7 +2066,8 @@
         if (persist === undefined) persist = true;
         document.body.style.transition = 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)';
         document.body.style.transform = '';
-        setTimeout(() => {
+        clearTimeout(_removeCropTimer);
+        _removeCropTimer = setTimeout(() => {
             document.body.style.transition = '';
             document.body.style.transformOrigin = '';
             document.body.style.overflow = '';
@@ -2567,13 +2571,17 @@
         updateMuteIcon();
     })();
 
+    let _snapFlashTimer1 = null;
+    let _snapFlashTimer2 = null;
     function snapFlash() {
+        clearTimeout(_snapFlashTimer1);
+        clearTimeout(_snapFlashTimer2);
         document.documentElement.style.transition = 'opacity 0.1s ease-out';
         document.documentElement.style.opacity = '0.7';
-        setTimeout(() => {
+        _snapFlashTimer1 = setTimeout(() => {
             document.documentElement.style.transition = 'opacity 0.2s ease-in';
             document.documentElement.style.opacity = '1';
-            setTimeout(() => {
+            _snapFlashTimer2 = setTimeout(() => {
                 document.documentElement.style.transition = '';
                 document.documentElement.style.opacity = '';
             }, 220);
@@ -2675,6 +2683,11 @@
         if (e.relatedTarget === strip || strip.contains(e.relatedTarget) || e.relatedTarget === hotzone) {
             return;
         }
+        // Cancel a pending dwell-show so it can't fire after the mouse has left
+        if (dwellTimer) {
+            clearTimeout(dwellTimer);
+            dwellTimer = null;
+        }
         if (stripVisible) {
             scheduleHide();
         }
@@ -2682,8 +2695,14 @@
 
     // Safety net: hide strip whenever the mouse leaves the window entirely
     document.addEventListener('mouseleave', (e) => {
-        if (e.relatedTarget === null && stripVisible) {
-            scheduleHide();
+        if (e.relatedTarget === null) {
+            if (dwellTimer) {
+                clearTimeout(dwellTimer);
+                dwellTimer = null;
+            }
+            if (stripVisible) {
+                scheduleHide();
+            }
         }
     });
 
