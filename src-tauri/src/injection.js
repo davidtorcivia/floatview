@@ -2670,6 +2670,23 @@
         cancelHide();
     });
 
+    dragBar.addEventListener('mouseleave', (e) => {
+        // If mouse moves into the strip or hotzone, don't hide
+        if (e.relatedTarget === strip || strip.contains(e.relatedTarget) || e.relatedTarget === hotzone) {
+            return;
+        }
+        if (stripVisible) {
+            scheduleHide();
+        }
+    });
+
+    // Safety net: hide strip whenever the mouse leaves the window entirely
+    document.addEventListener('mouseleave', (e) => {
+        if (e.relatedTarget === null && stripVisible) {
+            scheduleHide();
+        }
+    });
+
     hotzone.addEventListener('mouseenter', () => {
         cancelHide();
         dwellTimer = setTimeout(showStrip, DWELL_DELAY);
