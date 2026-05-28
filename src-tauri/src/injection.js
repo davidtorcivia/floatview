@@ -1372,6 +1372,11 @@
                 transform 0.06s var(--fv-press);
         }
 
+        .snap-cell:focus-visible {
+            outline: 2px solid rgba(200, 140, 80, 0.75);
+            outline-offset: 2px;
+        }
+
         .snap-cell.aspect-cell {
             font-size: 11px;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -1516,6 +1521,10 @@
         .btn.dropdown-open {
             background: rgba(255,255,255,0.12);
             color: #fff;
+        }
+
+        .btn.dropdown-open:hover {
+            background: rgba(255,255,255,0.2);
         }
 
         .volume-slider {
