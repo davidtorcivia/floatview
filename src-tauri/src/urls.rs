@@ -15,6 +15,14 @@ pub const DEFAULT_HOME_URL: &str = "https://www.google.com";
 /// - Rejects everything except http/https (no file://, javascript:, etc.).
 /// - Requires a host.
 /// - Returns the canonical parsed form via `Url::to_string()`.
+///
+/// Host/IP filtering is intentionally OMITTED: pointing the window at LAN
+/// and loopback media servers (Plex :32400, Emby, Jellyfin, a local
+/// dashboard) is a core feature, so loopback / link-local / RFC1918 hosts
+/// are deliberately allowed. This is a user-driven local browser — every
+/// URL originates from the local user (URL bar, their own config, CLI
+/// args), so there is no untrusted-remote SSRF vector here; the real
+/// authorization boundary is the per-session command token, not the host.
 pub fn normalize_url(raw: &str) -> Result<String, String> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {

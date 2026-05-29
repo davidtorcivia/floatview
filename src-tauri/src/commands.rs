@@ -10,7 +10,7 @@ use tauri_plugin_updater::UpdaterExt;
 
 use crate::browsing_data;
 use crate::config::{clamp_opacity, AppConfig, CropConfig};
-use crate::config_io::{persist_recent_url, sanitize_config, save_config, CROP_MIN_DIM};
+use crate::config_io::{persist_recent_url, sanitize_config, save_config, CROP_MIN_DIM, MAX_BOOKMARKS};
 use crate::opacity;
 use crate::ops;
 use crate::state::{authorize_command, AppState};
@@ -62,9 +62,12 @@ pub async fn navigate(
 ) -> Result<bool, String> {
     authorize_command(&state, &token, "navigate")?;
     let url_str = normalize_url(&url)?;
-    persist_recent_url(&state, &url_str)?;
     let parsed = Url::parse(&url_str).map_err(|e| e.to_string())?;
     window.navigate(parsed).map_err(|e| e.to_string())?;
+    // Record the URL only after navigation has been dispatched, so a parse
+    // or dispatch failure doesn't leave a never-loaded page in last_url /
+    // recents (which would otherwise become the next startup target).
+    persist_recent_url(&state, &url_str)?;
     Ok(true)
 }
 
@@ -215,43 +218,46 @@ pub async fn snap_window(
     //
     // Padding budget per layout: edges + inter-tile gaps. Halves use
     // 3*padding (left edge, gap, right edge), thirds use 4*padding.
+    // Peek (don't consume) the saved pre-snap size: if the resize below
+    // fails we must leave it intact for a retry. It is cleared only after a
+    // corner/center snap succeeds (further down).
     let restored_size: Option<(i32, i32)> = match position.as_str() {
         "top-left" | "top-right" | "bottom-left" | "bottom-right" | "center" => state
             .pre_snap_size
             .lock()
             .ok()
-            .and_then(|mut g| g.take())
+            .and_then(|g| *g)
             .map(|(w, h)| (w as i32, h as i32)),
         _ => None,
     };
 
     let (eff_w, eff_h) = restored_size.unwrap_or((ww, wh));
 
-    let (x, y, new_size) = match position.as_str() {
+    let (mut x, mut y, new_size) = match position.as_str() {
         "top-left" => (
             mx + padding,
             my + padding,
-            restored_size.map(|(w, h)| (w, h)),
+            restored_size,
         ),
         "top-right" => (
             mx + mw - eff_w - padding,
             my + padding,
-            restored_size.map(|(w, h)| (w, h)),
+            restored_size,
         ),
         "bottom-left" => (
             mx + padding,
             my + mh - eff_h - padding,
-            restored_size.map(|(w, h)| (w, h)),
+            restored_size,
         ),
         "bottom-right" => (
             mx + mw - eff_w - padding,
             my + mh - eff_h - padding,
-            restored_size.map(|(w, h)| (w, h)),
+            restored_size,
         ),
         "center" => (
             mx + (mw - eff_w) / 2,
             my + (mh - eff_h) / 2,
-            restored_size.map(|(w, h)| (w, h)),
+            restored_size,
         ),
         "left-half" => {
             let w = ((mw - 3 * padding) / 2).max(MIN_WINDOW_SIZE);
@@ -305,30 +311,54 @@ pub async fn snap_window(
         }
     }
 
-    use std::sync::atomic::Ordering;
-    state.snap_resize_in_progress.store(true, Ordering::Release);
+    // Clamp the final position so the window always lands on the target
+    // monitor, even when a restored pre-snap size (captured on a larger
+    // display) exceeds the current monitor. Mirrors set_aspect_ratio.
+    let (fw, fh) = new_size.unwrap_or((ww, wh));
+    let min_x = mx + padding;
+    let max_x = mx + mw - fw - padding;
+    let min_y = my + padding;
+    let max_y = my + mh - fh - padding;
+    if max_x >= min_x {
+        x = x.clamp(min_x, max_x);
+    }
+    if max_y >= min_y {
+        y = y.clamp(min_y, max_y);
+    }
 
-    let resize_result = (|| -> Result<(), String> {
-        if window.is_maximized().unwrap_or(false) {
-            window.unmaximize().map_err(|e| e.to_string())?;
-        }
-        if let Some((w, h)) = new_size {
-            window
-                .set_size(tauri::Size::Physical(tauri::PhysicalSize {
-                    width: w as u32,
-                    height: h as u32,
-                }))
-                .map_err(|e| e.to_string())?;
-        }
-        Ok(())
-    })();
+    // Record the size we're about to apply so the Resized handler can tell
+    // this programmatic resize from a manual drag (see snap_expected_size).
+    if let Ok(mut expected) = state.snap_expected_size.lock() {
+        *expected = new_size.map(|(w, h)| (w as u32, h as u32));
+    }
 
-    state.snap_resize_in_progress.store(false, Ordering::Release);
-    resize_result?;
+    if window.is_maximized().unwrap_or(false) {
+        window.unmaximize().map_err(|e| e.to_string())?;
+    }
+    if let Some((w, h)) = new_size {
+        window
+            .set_size(tauri::Size::Physical(tauri::PhysicalSize {
+                width: w as u32,
+                height: h as u32,
+            }))
+            .map_err(|e| e.to_string())?;
+    }
 
     window
         .set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }))
         .map_err(|e| e.to_string())?;
+
+    // A corner/center snap has now successfully consumed the snap chain.
+    // Clear pre_snap_size only here (post-success); we only peeked it above
+    // so a failed resize leaves it intact for a retry.
+    if matches!(
+        position.as_str(),
+        "top-left" | "top-right" | "bottom-left" | "bottom-right" | "center"
+    ) {
+        if let Ok(mut pre) = state.pre_snap_size.lock() {
+            *pre = None;
+        }
+    }
 
     persist_window_geometry(&window, &state)?;
     Ok(())
@@ -442,24 +472,21 @@ pub async fn set_aspect_ratio(
         }
     }
 
-    use std::sync::atomic::Ordering;
-    state.snap_resize_in_progress.store(true, Ordering::Release);
+    // Record the size we're about to apply so the Resized handler can tell
+    // this programmatic resize from a manual drag (see snap_expected_size).
+    if let Ok(mut expected) = state.snap_expected_size.lock() {
+        *expected = Some((new_w as u32, new_h as u32));
+    }
 
-    let resize_result = (|| -> Result<(), String> {
-        if window.is_maximized().unwrap_or(false) {
-            window.unmaximize().map_err(|e| e.to_string())?;
-        }
-        window
-            .set_size(tauri::Size::Physical(tauri::PhysicalSize {
-                width: new_w as u32,
-                height: new_h as u32,
-            }))
-            .map_err(|e| e.to_string())?;
-        Ok(())
-    })();
-
-    state.snap_resize_in_progress.store(false, Ordering::Release);
-    resize_result?;
+    if window.is_maximized().unwrap_or(false) {
+        window.unmaximize().map_err(|e| e.to_string())?;
+    }
+    window
+        .set_size(tauri::Size::Physical(tauri::PhysicalSize {
+            width: new_w as u32,
+            height: new_h as u32,
+        }))
+        .map_err(|e| e.to_string())?;
 
     window
         .set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: new_x, y: new_y }))
@@ -523,10 +550,35 @@ pub async fn get_version(
     Ok(app.package_info().version.to_string())
 }
 
+/// Begin a native window drag. Used instead of CSS `-webkit-app-region: drag`,
+/// which made WebView2 run a synchronous DOM hit-test on the UI thread for
+/// every mouse message — locking the whole window during scroll/interaction.
+/// This is a one-shot call: the OS takes over the move loop until the button
+/// is released, with no per-event cost.
+#[tauri::command]
+pub async fn start_drag(
+    window: WebviewWindow,
+    state: tauri::State<'_, AppState>,
+    token: String,
+) -> Result<(), String> {
+    authorize_command(&state, &token, "start_drag")?;
+    window.start_dragging().map_err(|e| e.to_string())
+}
+
 #[derive(serde::Serialize)]
 pub struct UpdateInfo {
     version: String,
     body: Option<String>,
+}
+
+/// Result envelope for `check_for_updates`. Returning a struct (rather than
+/// `Option<UpdateInfo>`) lets the JS side distinguish a successful "no
+/// update" (`{ update: null }`) from a failed check (the invoke wrapper
+/// returns `null` on any IPC/command error). Without this, both surfaced as
+/// JS `null` and a failed check was shown to the user as "You're up to date."
+#[derive(serde::Serialize)]
+pub struct UpdateCheck {
+    update: Option<UpdateInfo>,
 }
 
 #[tauri::command]
@@ -534,10 +586,10 @@ pub async fn check_for_updates(
     app: AppHandle,
     state: tauri::State<'_, AppState>,
     token: String,
-) -> Result<Option<UpdateInfo>, String> {
+) -> Result<UpdateCheck, String> {
     authorize_command(&state, &token, "check_for_updates")?;
     let updater = app.updater().map_err(|e| e.to_string())?;
-    let result = match updater.check().await {
+    let update = match updater.check().await {
         Ok(Some(update)) => Some(UpdateInfo {
             version: update.version.clone(),
             body: update.body.clone(),
@@ -549,8 +601,8 @@ pub async fn check_for_updates(
     // found. The settings UI drives most "Check" clicks, but if the
     // user then closes settings without installing, the tray still
     // reflects availability.
-    crate::state::update_tray_update_available(&app, result.as_ref().map(|u| u.version.as_str()));
-    Ok(result)
+    crate::state::update_tray_update_available(&app, update.as_ref().map(|u| u.version.as_str()));
+    Ok(UpdateCheck { update })
 }
 
 /// Download + install the latest available update, emitting progress
@@ -657,8 +709,8 @@ pub async fn add_bookmark(
     if config.bookmarks.iter().any(|b| urls_match(b, &url)) {
         return Ok(());
     }
-    if config.bookmarks.len() >= 50 {
-        return Err("Bookmark limit reached (max 50)".to_string());
+    if config.bookmarks.len() >= MAX_BOOKMARKS {
+        return Err(format!("Bookmark limit reached (max {MAX_BOOKMARKS})"));
     }
     config.bookmarks.push(url);
     save_config(&state, &config);

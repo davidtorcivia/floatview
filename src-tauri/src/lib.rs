@@ -1,9 +1,14 @@
 //! FloatView library entry point.
 //!
 //! The binary at `src/main.rs` is a thin shim over [`run`]. Exposing the
-//! pipeline as a library lets integration tests under `tests/` exercise
-//! operations against a `tauri::test::MockRuntime`, which would be
-//! invisible to them if this were bin-only.
+//! pipeline as a library lets the in-crate `#[cfg(test)]` suites (config
+//! load/save/shutdown lifecycle, sanitization, URL/hotkey/geometry helpers)
+//! link against `tauri` and exercise the operation pipeline directly. A
+//! separate `tests/` integration crate is intentionally NOT used — it fails
+//! to link on Windows because the `webview2-com` import library that the
+//! `tauri` crate pulls in transitively isn't resolved for a plain test
+//! binary the way `tauri-build` resolves it for the main bin (see the
+//! `lifecycle_tests` module note below).
 //!
 //! Module map:
 //! - [`state`]       : `AppState`, token auth, tray-item mutator
@@ -51,6 +56,7 @@ use crate::state::AppState;
 use crate::urls::{normalize_url, DEFAULT_HOME_URL};
 use crate::window_state::{
     apply_window_state, persist_window_geometry, DEFAULT_WINDOW_HEIGHT, DEFAULT_WINDOW_WIDTH,
+    MIN_INNER_HEIGHT, MIN_INNER_WIDTH,
 };
 
 /// Build and run the FloatView application. Blocks until the Tauri event
@@ -99,7 +105,7 @@ pub fn run() {
                 shutdown_flag: AtomicBool::new(false),
                 tray: Mutex::new(None),
                 pre_snap_size: Mutex::new(None),
-                snap_resize_in_progress: AtomicBool::new(false),
+                snap_expected_size: Mutex::new(None),
             };
             app.manage(state);
 
@@ -107,6 +113,12 @@ pub fn run() {
                 WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                     .title("FloatView")
                     .inner_size(DEFAULT_WINDOW_WIDTH as f64, DEFAULT_WINDOW_HEIGHT as f64)
+                    // Floor the window size so a manual edge-drag can't shrink
+                    // it to a width where the control strip clips its window
+                    // buttons / the settings modal overflows the viewport.
+                    // (The frameless window is freely resizable, so without
+                    // this nothing stops an arbitrarily tiny window.)
+                    .min_inner_size(MIN_INNER_WIDTH, MIN_INNER_HEIGHT)
                     .decorations(false)
                     .always_on_top(true)
                     .initialization_script(&injection_script)
@@ -162,19 +174,37 @@ pub fn run() {
                         }
                         // RunEvent::Exit will call shutdown() to flush and join the saver.
                     }
-                    tauri::WindowEvent::Resized(_) => {
+                    tauri::WindowEvent::Resized(size) => {
                         // Manual resize (drag of a window edge) clears the
                         // pre-snap size so a subsequent corner snap honors
                         // the user's new size instead of restoring stale
-                        // history. Snap-driven resizes set the in-progress
-                        // flag so they don't trigger this clear.
+                        // history. A snap/aspect command records the exact
+                        // size it applied in `snap_expected_size`; if this
+                        // event's size matches it (within a small DPI-rounding
+                        // tolerance) the resize is programmatic and we leave
+                        // `pre_snap_size` intact. This comparison is timing-
+                        // independent — it works no matter when the async
+                        // Resized event arrives relative to the command (a
+                        // boolean "in progress" flag did not, because the
+                        // command cleared it before the event was delivered).
                         let state = app_handle.state::<AppState>();
-                        if !state
-                            .snap_resize_in_progress
-                            .load(std::sync::atomic::Ordering::Acquire)
-                        {
+                        let mut programmatic = false;
+                        if let Ok(expected) = state.snap_expected_size.lock() {
+                            if let Some((ew, eh)) = *expected {
+                                let dw = (size.width as i64 - ew as i64).abs();
+                                let dh = (size.height as i64 - eh as i64).abs();
+                                programmatic = dw <= 2 && dh <= 2;
+                            }
+                        }
+                        if !programmatic {
                             if let Ok(mut pre) = state.pre_snap_size.lock() {
                                 *pre = None;
+                            }
+                            // A manual resize invalidates any stale snap
+                            // expectation so future drags are classified
+                            // correctly.
+                            if let Ok(mut expected) = state.snap_expected_size.lock() {
+                                *expected = None;
                             }
                         }
                     }
@@ -230,7 +260,23 @@ pub fn run() {
                         },
                         Err(e) => warn!("Background updater unavailable: {}", e),
                     }
-                    tokio::time::sleep(RECHECK_INTERVAL).await;
+                    // Sleep until the next check in short steps, re-checking
+                    // the shutdown flag each step, so the task exits promptly
+                    // on shutdown instead of being pinned in a 24h sleep
+                    // (matching the geometry saver's cooperative pattern).
+                    const STEP: Duration = Duration::from_secs(60);
+                    let mut slept = Duration::ZERO;
+                    while slept < RECHECK_INTERVAL {
+                        if app_for_updates
+                            .state::<AppState>()
+                            .shutdown_flag
+                            .load(Ordering::Acquire)
+                        {
+                            return;
+                        }
+                        tokio::time::sleep(STEP).await;
+                        slept += STEP;
+                    }
                 }
             });
 
@@ -283,6 +329,7 @@ pub fn run() {
             commands::close_window,
             commands::maximize_toggle,
             commands::get_version,
+            commands::start_drag,
             commands::check_for_updates,
             commands::install_update,
             commands::set_window_title,
@@ -430,7 +477,7 @@ mod lifecycle_tests {
                 shutdown_flag: AtomicBool::new(false),
                 tray: Mutex::new(None),
                 pre_snap_size: Mutex::new(None),
-                snap_resize_in_progress: AtomicBool::new(false),
+                snap_expected_size: Mutex::new(None),
             };
 
             StateFixture { state, temp }

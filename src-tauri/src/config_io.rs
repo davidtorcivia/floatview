@@ -18,9 +18,25 @@ use tracing::{error, warn};
 use crate::config::{clamp_opacity, AppConfig, CropConfig};
 use crate::state::AppState;
 use crate::urls::{normalize_url, DEFAULT_HOME_URL};
-use crate::window_state::normalize_startup_window_size;
+use crate::window_state::{normalize_startup_window_size, MAX_WINDOW_SIZE};
 
 pub const MAX_HOTKEY_LEN: usize = 64;
+
+/// Most-recent-URL history cap, enforced by both `sanitize_config` and
+/// `persist_recent_url`.
+pub const MAX_RECENT_URLS: usize = 10;
+
+/// Bookmark cap, enforced by both `sanitize_config` and `add_bookmark`.
+pub const MAX_BOOKMARKS: usize = 50;
+
+/// Upper bound for `auto_refresh_minutes`. Caps the JS `setInterval` delay
+/// (`minutes * 60_000` ms) well within the 32-bit ceiling so a tampered
+/// config can't overflow it into a near-continuous reload loop. 24h.
+pub const MAX_AUTO_REFRESH_MINUTES: u32 = 1440;
+
+/// Absolute bound for persisted window x/y. Keeps `is_position_visible`'s
+/// overlap arithmetic far from i32 overflow even on a tampered config.
+const MAX_WINDOW_POS: i32 = MAX_WINDOW_SIZE * 4;
 
 /// Minimum crop dimension as a fraction of viewport. Below this, applyCrop's
 /// 1/w scale blows up toward infinity; injection.js's interactive selector
@@ -48,7 +64,8 @@ pub fn get_config_path(app: &AppHandle) -> PathBuf {
 /// Best-effort rescue of a corrupt/missing config by resetting bad fields
 /// to their defaults. Specifically:
 ///
-/// - Clamps window geometry / opacity / monitor index.
+/// - Clamps window geometry (size, position) and opacity.
+/// - Caps `auto_refresh_minutes` so the JS refresh interval can't overflow.
 /// - Rejects non-http(s) URLs in `home_url`, `last_url`, `recent_urls`,
 ///   `bookmarks`; normalizes the rest.
 /// - Enforces 50-bookmark and 10-recent-URL caps.
@@ -61,7 +78,9 @@ pub fn sanitize_config(mut config: AppConfig) -> AppConfig {
     config.window.width = width;
     config.window.height = height;
     config.window.opacity = clamp_opacity(config.window.opacity);
-    config.window.monitor = config.window.monitor.max(0);
+    config.window.x = config.window.x.clamp(-MAX_WINDOW_POS, MAX_WINDOW_POS);
+    config.window.y = config.window.y.clamp(-MAX_WINDOW_POS, MAX_WINDOW_POS);
+    config.auto_refresh_minutes = config.auto_refresh_minutes.min(MAX_AUTO_REFRESH_MINUTES);
 
     config.home_url = normalize_url(&config.home_url)
         .or_else(|_| normalize_url(DEFAULT_HOME_URL))
@@ -79,7 +98,7 @@ pub fn sanitize_config(mut config: AppConfig) -> AppConfig {
                 deduped_recent.push(normalized);
             }
         }
-        if deduped_recent.len() >= 10 {
+        if deduped_recent.len() >= MAX_RECENT_URLS {
             break;
         }
     }
@@ -108,7 +127,7 @@ pub fn sanitize_config(mut config: AppConfig) -> AppConfig {
                 deduped_bookmarks.push(normalized);
             }
         }
-        if deduped_bookmarks.len() >= 50 {
+        if deduped_bookmarks.len() >= MAX_BOOKMARKS {
             break;
         }
     }
@@ -134,12 +153,27 @@ pub fn sanitize_config(mut config: AppConfig) -> AppConfig {
     config
 }
 
+/// Validate a hotkey string and fall back to the default if it is empty,
+/// over-length, or contains any character outside the set that
+/// [`crate::hotkeys::parse_hotkey`] accepts (alphanumerics, `+`, and the
+/// punctuation keys). This is the trust boundary: it guarantees a hotkey
+/// value can never carry HTML/markup, so the settings UI can render it as
+/// text without risk of injection even from a hand-edited config.
 fn sanitize_hotkey(value: &str, fallback: &str) -> String {
     let trimmed = value.trim();
-    if trimmed.is_empty() || trimmed.len() > MAX_HOTKEY_LEN {
-        fallback.to_string()
-    } else {
+    let valid = !trimmed.is_empty()
+        && trimmed.len() <= MAX_HOTKEY_LEN
+        && trimmed.chars().all(|c| {
+            c.is_ascii_alphanumeric()
+                || matches!(
+                    c,
+                    '+' | '[' | ']' | ';' | '\'' | ',' | '.' | '/' | '\\' | '`' | '-' | '='
+                )
+        });
+    if valid {
         trimmed.to_string()
+    } else {
+        fallback.to_string()
     }
 }
 
@@ -208,8 +242,8 @@ pub fn persist_recent_url(state: &AppState, url: &str) -> Result<(), String> {
     if !recent_unchanged {
         recent.retain(|u| u != url);
         recent.insert(0, url.to_string());
-        if recent.len() > 10 {
-            recent.truncate(10);
+        if recent.len() > MAX_RECENT_URLS {
+            recent.truncate(MAX_RECENT_URLS);
         }
     }
 
@@ -259,7 +293,6 @@ mod tests {
         config.window.width = 10;
         config.window.height = 50_000;
         config.window.opacity = 2.0;
-        config.window.monitor = -2;
         config.home_url = "javascript:alert(1)".to_string();
         config.last_url = Some("ftp://example.com".to_string());
         config.recent_urls = Some(vec![
@@ -274,7 +307,6 @@ mod tests {
         assert_eq!(sanitized.window.width, MIN_WINDOW_SIZE);
         assert_eq!(sanitized.window.height, MAX_WINDOW_SIZE);
         assert_eq!(sanitized.window.opacity, 1.0);
-        assert_eq!(sanitized.window.monitor, 0);
         assert_eq!(sanitized.home_url, "https://www.google.com/");
         assert!(sanitized.last_url.is_none());
         assert_eq!(

@@ -19,6 +19,16 @@ pub const DEFAULT_WINDOW_HEIGHT: i32 = 720;
 pub const MIN_WINDOW_SIZE: i32 = 200;
 pub const MAX_WINDOW_SIZE: i32 = 10_000;
 
+/// OS-level minimum inner size for the main window. The control strip packs
+/// ~15 fixed-width buttons + an opacity slider into a single non-wrapping
+/// flex row whose incompressible width is ~835 CSS px; below that the strip
+/// clips its right-most controls (settings / minimize / close) off-screen,
+/// and the settings modal (`min-width: 360px`) overflows. Flooring the
+/// window here keeps every control reachable. (The frameless window is
+/// freely resizable, so nothing else bounds a manual edge-drag.)
+pub const MIN_INNER_WIDTH: f64 = 880.0;
+pub const MIN_INNER_HEIGHT: f64 = 400.0;
+
 /// Clamp a persisted size to sane bounds. If both dimensions match the
 /// minimum (typically meaning the window was saved while minimized) we
 /// reset to the default size rather than come back up as a 200x200 square.
@@ -99,14 +109,18 @@ pub fn is_position_visible(
     width: i32,
     height: i32,
 ) -> bool {
-    const MIN_OVERLAP: i32 = 50;
+    const MIN_OVERLAP: i64 = 50;
+    // Compute overlap in i64 so a corrupt/tampered config with x/y near
+    // i32::MAX/MIN can't overflow `x + width` (which would panic in debug
+    // and wrap in release, defeating the off-screen safety check itself).
+    let (x, y, width, height) = (x as i64, y as i64, width as i64, height as i64);
     for monitor in monitors {
         let mp = monitor.position();
         let ms = monitor.size();
-        let mx = mp.x;
-        let my = mp.y;
-        let mw = ms.width as i32;
-        let mh = ms.height as i32;
+        let mx = mp.x as i64;
+        let my = mp.y as i64;
+        let mw = ms.width as i64;
+        let mh = ms.height as i64;
         let overlap_x = (x + width).min(mx + mw) - x.max(mx);
         let overlap_y = (y + height).min(my + mh) - y.max(my);
         if overlap_x >= MIN_OVERLAP && overlap_y >= MIN_OVERLAP {

@@ -27,10 +27,16 @@ pub fn build_injection_script(command_token: &str, home_url: &str) -> String {
     let home_literal = serde_json::to_string(home_url)
         .unwrap_or_else(|_| "\"\"".to_string());
     let alpha_floor = format!("{}", crate::opacity::WINDOW_ALPHA_FLOOR);
+    // Substitute the untrusted, user-controlled home URL LAST so no later
+    // `replace` re-scans it. The token (a v4 UUID) and the alpha floor (an
+    // ASCII decimal) structurally cannot contain any placeholder substring,
+    // so inserting them first is safe; doing the home URL last prevents a
+    // home URL that itself contains a placeholder literal (e.g.
+    // `https://x/__FLOATVIEW_ALPHA_FLOOR__`) from being corrupted.
     INJECTION_SCRIPT
+        .replace(ALPHA_FLOOR_PLACEHOLDER, &alpha_floor)
         .replace(COMMAND_TOKEN_PLACEHOLDER, command_token)
         .replace(HOME_URL_PLACEHOLDER, &home_literal)
-        .replace(ALPHA_FLOOR_PLACEHOLDER, &alpha_floor)
 }
 
 /// Build a JS snippet that navigates the webview to the given URL.
@@ -201,6 +207,22 @@ mod tests {
         assert!(
             script.contains(&expected),
             "alpha floor must be substituted into the parseFloat call"
+        );
+    }
+
+    #[test]
+    fn build_injection_script_preserves_placeholder_substring_in_home_url() {
+        // A home URL that contains a placeholder sentinel must survive intact
+        // because the home URL is substituted last (regression test for the
+        // earlier ordering bug where the trailing alpha-floor replace rewrote
+        // the sentinel inside the already-inserted home URL).
+        let script = build_injection_script(
+            "tkn",
+            "https://example.com/__FLOATVIEW_ALPHA_FLOOR__",
+        );
+        assert!(
+            script.contains(r#"EMBEDDED_HOME_URL = "https://example.com/__FLOATVIEW_ALPHA_FLOOR__""#),
+            "home URL containing a placeholder sentinel must not be corrupted"
         );
     }
 

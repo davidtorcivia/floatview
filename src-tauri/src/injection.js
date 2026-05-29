@@ -34,6 +34,23 @@
     window.__floatViewInitialized = true;
 
     // --------------------------------------------------------------------
+    // [0a] Capture the IPC primitive synchronously, before page scripts run
+    //
+    // This init script executes at document_created — ahead of the page's
+    // own <head>/inline scripts. We snapshot Tauri's low-level invoke here,
+    // immediately, and bind it. Every later IPC call goes through this
+    // captured reference instead of re-reading window.__TAURI__.core.invoke
+    // at call time. That closes a token-theft hole: with `withGlobalTauri`
+    // the page shares window.__TAURI__, so a hostile page could otherwise
+    // replace `__TAURI__.core.invoke` with a wrapper that records the
+    // per-session command token we attach to every call. __TAURI_INTERNALS__
+    // is the primitive Tauri injects earliest; the facade is only a fallback.
+    let _ipcInvoke =
+        (window.__TAURI_INTERNALS__ && typeof window.__TAURI_INTERNALS__.invoke === 'function')
+            ? window.__TAURI_INTERNALS__.invoke.bind(window.__TAURI_INTERNALS__)
+            : null;
+
+    // --------------------------------------------------------------------
     // [0] Trusted Types / innerHTML safety
     //
     // Some hosts (YouTube, GitHub, many Google properties) ship
@@ -53,10 +70,12 @@
     let _ttPolicy = null;
     if (typeof window.trustedTypes !== 'undefined' && window.trustedTypes.createPolicy) {
         try {
+            // Only createHTML is used (setInner). We deliberately do NOT
+            // mint createScript/createScriptURL passthroughs: they were dead
+            // code that would weaken the string-to-code Trusted-Types defense
+            // on hardened host sites if the policy object ever leaked.
             _ttPolicy = window.trustedTypes.createPolicy('floatview', {
                 createHTML: (s) => s,
-                createScript: (s) => s,
-                createScriptURL: (s) => s,
             });
         } catch (_) {
             // Named-policy creation rejected by CSP — DOMParser fallback
@@ -233,7 +252,11 @@
             pointer-events: auto;
             z-index: 2147483647;
             cursor: grab;
-            -webkit-app-region: drag;
+            /* No -webkit-app-region:drag — it makes WebView2 run a synchronous
+               DOM hit-test on the UI thread for every mouse message, locking
+               the window during scroll/interaction. Dragging is done natively
+               via start_drag (see the drag-bar/strip mousedown handlers). */
+            -webkit-app-region: no-drag;
         }
 
         .drag-bar:active {
@@ -248,7 +271,11 @@
             height: ${HOTZONE_HEIGHT}px;
             pointer-events: auto;
             z-index: 2147483646;
-            -webkit-app-region: drag;
+            /* No -webkit-app-region:drag — it makes WebView2 run a synchronous
+               DOM hit-test on the UI thread for every mouse message, locking
+               the window during scroll/interaction. Dragging is done natively
+               via start_drag (see the drag-bar/strip mousedown handlers). */
+            -webkit-app-region: no-drag;
             cursor: grab;
         }
 
@@ -259,8 +286,6 @@
             right: 20px;
             height: ${STRIP_HEIGHT}px;
             background: linear-gradient(135deg, rgba(46, 46, 52, 0.62), rgba(36, 36, 42, 0.52));
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
             display: flex;
             align-items: center;
             padding: 0 12px;
@@ -277,7 +302,11 @@
                sliders explicitly set no-drag so they remain interactive;
                empty padding/gap regions become the title-bar-style grab
                surface (Spotify mini-player / Discord pattern). */
-            -webkit-app-region: drag;
+            /* No -webkit-app-region:drag — it makes WebView2 run a synchronous
+               DOM hit-test on the UI thread for every mouse message, locking
+               the window during scroll/interaction. Dragging is done natively
+               via start_drag (see the drag-bar/strip mousedown handlers). */
+            -webkit-app-region: no-drag;
             cursor: grab;
             border: none;
             border-radius: 12px;
@@ -292,6 +321,13 @@
         .strip.visible {
             transform: translateY(0) scale(1);
             opacity: 1;
+            /* Only apply the (expensive) backdrop blur while the strip is
+               actually visible, so the compositor can drop the layer while
+               hidden. Set instantly on class toggle — NOT transitioned:
+               animating backdrop-filter on this layered always-on-top window
+               over video is what froze the DWM compositor previously. */
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
             transition: transform 0.3s cubic-bezier(0.22, 0.9, 0.36, 1.12), opacity 0.2s ease-out;
         }
 
@@ -576,14 +612,16 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, calc(-50% + 6px)) scale(0.95);
-            background: linear-gradient(160deg, rgba(46, 46, 52, 0.78), rgba(36, 36, 42, 0.68));
-            backdrop-filter: blur(28px);
-            -webkit-backdrop-filter: blur(28px);
+            /* DIAGNOSTIC: backdrop-filter removed (see .modal-overlay note). */
+            background: linear-gradient(160deg, rgba(40, 40, 46, 0.97), rgba(30, 30, 36, 0.95));
             border: none;
             border-radius: 16px;
             padding: 0;
-            min-width: 360px;
-            max-width: 440px;
+            /* Cap to the viewport so the panel body never overflows / clips
+               horizontally on a narrow window (defense-in-depth alongside the
+               window's min_inner_size). */
+            min-width: min(360px, calc(100vw - 32px));
+            max-width: min(440px, calc(100vw - 32px));
             max-height: 80vh;
             overflow: visible;
             box-shadow: 0 20px 60px rgba(0,0,0,0.18), 0 4px 12px rgba(0,0,0,0.1);
@@ -1012,22 +1050,19 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0,0,0,0.3);
-            backdrop-filter: blur(0px);
-            -webkit-backdrop-filter: blur(0px);
+            /* DIAGNOSTIC: backdrop-filter removed. A full-screen backdrop blur
+               on this always-on-top window appears to lock the WebView2/DWM
+               compositor for seconds after the modal is shown/hidden. Solid
+               dim + opacity fade only. */
+            background: rgba(0,0,0,0.5);
             z-index: 2147483646;
             pointer-events: none;
             opacity: 0;
-            transition:
-                opacity 0.28s var(--fv-out),
-                backdrop-filter 0.32s var(--fv-out),
-                -webkit-backdrop-filter 0.32s var(--fv-out);
+            transition: opacity 0.28s var(--fv-out);
         }
 
         .modal-overlay.visible {
             opacity: 1;
-            backdrop-filter: blur(4px);
-            -webkit-backdrop-filter: blur(4px);
             pointer-events: auto;
         }
 
@@ -1095,9 +1130,8 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, calc(-50% + 6px)) scale(0.95);
-            background: linear-gradient(160deg, rgba(46, 46, 52, 0.78), rgba(36, 36, 42, 0.68));
-            backdrop-filter: blur(28px);
-            -webkit-backdrop-filter: blur(28px);
+            /* DIAGNOSTIC: backdrop-filter removed (see .modal-overlay note). */
+            background: linear-gradient(160deg, rgba(40, 40, 46, 0.97), rgba(30, 30, 36, 0.95));
             border: none;
             border-radius: 16px;
             padding: 32px;
@@ -1602,6 +1636,20 @@
             box-shadow: 0 3px 10px rgba(0,0,0,0.35), 0 0 0 3px rgba(200, 140, 80, 0.25);
             transform: none;
         }
+
+        /* Respect the OS "reduce motion" preference (WCAG 2.3.3). Collapse
+           animation/transition DURATIONS rather than forcing transform:none,
+           so the strip's off-screen positioning (translateY when hidden vs
+           visible) is preserved while the perceived motion is removed, and
+           infinite loops (hotkey-capture pulse, update spinner) stop. */
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+                scroll-behavior: auto !important;
+            }
+        }
     `;
     shadow.appendChild(style);
 
@@ -1620,49 +1668,49 @@
 
     // SVG icons
     const icons = {
-        pin: `<svg viewBox="0 0 24 24"><path d="M9 3v6l-2 4v2h4v4l1 1 1-1v-4h4v-2l-2-4V3"/><line x1="8" y1="3" x2="16" y2="3"/></svg>`,
-        pinActive: `<svg viewBox="0 0 24 24"><path d="M9 3v6l-2 4v2h4v4l1 1 1-1v-4h4v-2l-2-4V3" fill="currentColor"/><line x1="8" y1="3" x2="16" y2="3"/></svg>`,
-        recent: `<svg viewBox="0 0 24 24"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>`,
-        lock: `<svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>`,
-        lockActive: `<svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" fill="currentColor"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>`,
-        settings: `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>`,
-        minimize: `<svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
-        close: `<svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
-        home: `<svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`,
-        snap: `<svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`,
-        refresh: `<svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>`,
-        crop: `<svg viewBox="0 0 24 24"><path d="M6.13 1L6 16a2 2 0 002 2h15"/><path d="M1 6.13L16 6a2 2 0 012 2v15"/></svg>`,
-        back: `<svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>`,
-        forward: `<svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>`,
-        bookmark: `<svg viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>`,
-        bookmarkActive: `<svg viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z" fill="currentColor"/></svg>`,
-        volume: `<svg viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/><path d="M19.07 4.93a10 10 0 010 14.14"/></svg>`,
-        volumeMuted: `<svg viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>`,
-        zoomVideo: `<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><polyline points="8 9 8 12 11 12"/><polyline points="16 15 16 12 13 12"/></svg>`,
-        zoomVideoActive: `<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2" fill="currentColor" fill-opacity="0.25"/><polyline points="8 9 8 12 11 12"/><polyline points="16 15 16 12 13 12"/></svg>`,
+        pin: `<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M9 3v6l-2 4v2h4v4l1 1 1-1v-4h4v-2l-2-4V3"/><line x1="8" y1="3" x2="16" y2="3"/></svg>`,
+        pinActive: `<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M9 3v6l-2 4v2h4v4l1 1 1-1v-4h4v-2l-2-4V3" fill="currentColor"/><line x1="8" y1="3" x2="16" y2="3"/></svg>`,
+        recent: `<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>`,
+        lock: `<svg aria-hidden="true" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>`,
+        lockActive: `<svg aria-hidden="true" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" fill="currentColor"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>`,
+        settings: `<svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>`,
+        minimize: `<svg aria-hidden="true" viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
+        close: `<svg aria-hidden="true" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
+        home: `<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`,
+        snap: `<svg aria-hidden="true" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`,
+        refresh: `<svg aria-hidden="true" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>`,
+        crop: `<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M6.13 1L6 16a2 2 0 002 2h15"/><path d="M1 6.13L16 6a2 2 0 012 2v15"/></svg>`,
+        back: `<svg aria-hidden="true" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>`,
+        forward: `<svg aria-hidden="true" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>`,
+        bookmark: `<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>`,
+        bookmarkActive: `<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z" fill="currentColor"/></svg>`,
+        volume: `<svg aria-hidden="true" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/><path d="M19.07 4.93a10 10 0 010 14.14"/></svg>`,
+        volumeMuted: `<svg aria-hidden="true" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>`,
+        zoomVideo: `<svg aria-hidden="true" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><polyline points="8 9 8 12 11 12"/><polyline points="16 15 16 12 13 12"/></svg>`,
+        zoomVideoActive: `<svg aria-hidden="true" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2" fill="currentColor" fill-opacity="0.25"/><polyline points="8 9 8 12 11 12"/><polyline points="16 15 16 12 13 12"/></svg>`,
     };
 
     const strip = document.createElement('div');
     strip.className = 'strip';
     setInner(strip, `
-        <button class="btn" id="btn-back" title="Go Back">${icons.back}</button>
-        <button class="btn" id="btn-forward" title="Go Forward">${icons.forward}</button>
-        <button class="btn" id="btn-refresh" title="Refresh Page">${icons.refresh}</button>
-        <button class="btn" id="btn-pin" title="Always on Top (${formatKey('Alt+Shift+T')})">${icons.pin}</button>
-        <button class="btn" id="btn-recent" title="Recent URLs">${icons.recent}</button>
-        <button class="btn" id="btn-home" title="Go Home">${icons.home}</button>
-        <input type="text" class="url-display" id="url-input" placeholder="Enter URL or search...">
-        <button class="btn" id="btn-bookmark" title="Bookmark this page">${icons.bookmark}</button>
-        <button class="btn" id="btn-lock" title="Click-through mode (${formatKey('Alt+Shift+D')})">${icons.lock}</button>
-        <button class="btn" id="btn-snap" title="Snap & resize">${icons.snap}</button>
-        <button class="btn" id="btn-crop" title="Crop/Zoom region">${icons.crop}</button>
-        <button class="btn" id="btn-zoom-video" title="Zoom to video (${formatKey('Alt+Shift+V')})">${icons.zoomVideo}</button>
-        <div class="divider"></div>
-        <button class="btn" id="btn-mute" title="Mute (${formatKey('Alt+Shift+M')})">${icons.volume}</button>
-        <input type="range" class="opacity-slider" id="opacity-slider" min="10" max="100" value="100" title="Opacity">
-        <button class="btn" id="btn-settings" title="Settings">${icons.settings}</button>
-        <button class="btn" id="btn-minimize" title="Minimize">${icons.minimize}</button>
-        <button class="btn" id="btn-close" title="Close">${icons.close}</button>
+        <button class="btn" id="btn-back" title="Go Back" aria-label="Go back">${icons.back}</button>
+        <button class="btn" id="btn-forward" title="Go Forward" aria-label="Go forward">${icons.forward}</button>
+        <button class="btn" id="btn-refresh" title="Refresh Page" aria-label="Refresh page">${icons.refresh}</button>
+        <button class="btn" id="btn-pin" title="Always on Top (${formatKey('Alt+Shift+T')})" aria-label="Toggle always on top">${icons.pin}</button>
+        <button class="btn" id="btn-recent" title="Recent URLs" aria-label="Recent URLs">${icons.recent}</button>
+        <button class="btn" id="btn-home" title="Go Home" aria-label="Go home">${icons.home}</button>
+        <input type="text" class="url-display" id="url-input" placeholder="Enter URL or search..." aria-label="Address bar">
+        <button class="btn" id="btn-bookmark" title="Bookmark this page" aria-label="Bookmark this page">${icons.bookmark}</button>
+        <button class="btn" id="btn-lock" title="Click-through mode (${formatKey('Alt+Shift+D')})" aria-label="Toggle click-through mode">${icons.lock}</button>
+        <button class="btn" id="btn-snap" title="Snap & resize" aria-label="Snap and resize">${icons.snap}</button>
+        <button class="btn" id="btn-crop" title="Crop/Zoom region" aria-label="Crop or zoom region">${icons.crop}</button>
+        <button class="btn" id="btn-zoom-video" title="Zoom to video (${formatKey('Alt+Shift+V')})" aria-label="Zoom to video">${icons.zoomVideo}</button>
+        <div class="divider" aria-hidden="true"></div>
+        <button class="btn" id="btn-mute" title="Mute (${formatKey('Alt+Shift+M')})" aria-label="Mute or unmute">${icons.volume}</button>
+        <input type="range" class="opacity-slider" id="opacity-slider" min="10" max="100" value="100" title="Opacity" aria-label="Window opacity">
+        <button class="btn" id="btn-settings" title="Settings" aria-label="Settings">${icons.settings}</button>
+        <button class="btn" id="btn-minimize" title="Minimize" aria-label="Minimize window">${icons.minimize}</button>
+        <button class="btn" id="btn-close" title="Close" aria-label="Close window">${icons.close}</button>
     `);
     shadow.appendChild(strip);
 
@@ -1686,20 +1734,20 @@
         <div class="snap-section">
             <div class="snap-section-label">Position</div>
             <div class="snap-grid pos-grid">
-                <button class="snap-cell" data-pos="top-left" title="Top Left">&#8598;</button>
-                <button class="snap-cell" data-pos="center" title="Center">&#9678;</button>
-                <button class="snap-cell" data-pos="top-right" title="Top Right">&#8599;</button>
-                <button class="snap-cell" data-pos="bottom-left" title="Bottom Left">&#8601;</button>
-                <button class="snap-cell" data-pos="bottom-right" title="Bottom Right" style="grid-column:3;">&#8600;</button>
+                <button class="snap-cell" data-pos="top-left" title="Top Left" aria-label="Snap top left">&#8598;</button>
+                <button class="snap-cell" data-pos="center" title="Center" aria-label="Center">&#9678;</button>
+                <button class="snap-cell" data-pos="top-right" title="Top Right" aria-label="Snap top right">&#8599;</button>
+                <button class="snap-cell" data-pos="bottom-left" title="Bottom Left" aria-label="Snap bottom left">&#8601;</button>
+                <button class="snap-cell" data-pos="bottom-right" title="Bottom Right" aria-label="Snap bottom right" style="grid-column:3;">&#8600;</button>
             </div>
         </div>
         <div class="snap-section">
             <div class="snap-section-label">Halves</div>
             <div class="snap-grid half-grid">
-                <button class="snap-cell" data-pos="left-half" title="Left Half">&#9680;</button>
-                <button class="snap-cell" data-pos="right-half" title="Right Half">&#9681;</button>
-                <button class="snap-cell" data-pos="top-half" title="Top Half">&#9683;</button>
-                <button class="snap-cell" data-pos="bottom-half" title="Bottom Half">&#9682;</button>
+                <button class="snap-cell" data-pos="left-half" title="Left Half" aria-label="Snap to left half">&#9680;</button>
+                <button class="snap-cell" data-pos="right-half" title="Right Half" aria-label="Snap to right half">&#9681;</button>
+                <button class="snap-cell" data-pos="top-half" title="Top Half" aria-label="Snap to top half">&#9683;</button>
+                <button class="snap-cell" data-pos="bottom-half" title="Bottom Half" aria-label="Snap to bottom half">&#9682;</button>
             </div>
         </div>
         <div class="snap-section">
@@ -1862,8 +1910,8 @@
         <div class="tutorial-step" data-step="1">
             <h2>The Control Strip</h2>
             <p>Hover the <strong>top edge</strong> of the window to reveal the control strip. It slides down with all your controls:</p>
-            <div class="tutorial-diagram">[Pin] [Recent] [Home] [____URL bar____] [Lock] | [Opacity] [Settings] [-] [x]</div>
-            <p><strong>Pin</strong> toggles always-on-top &bull; <strong>Home</strong> goes to your home page &bull; <strong>Lock</strong> enables click-through mode &bull; <strong>Opacity</strong> adjusts transparency</p>
+            <div class="tutorial-diagram">◂ ▸ ⟳ &nbsp; Pin &nbsp; Recent &nbsp; Home &nbsp; [ URL ] &nbsp; ★ &nbsp; Lock &nbsp; Snap &nbsp; Crop &nbsp; Zoom &nbsp;|&nbsp; Mute &nbsp; Opacity &nbsp; Settings &nbsp; – &nbsp; ✕</div>
+            <p>Left to right: <strong>navigation</strong> (back / forward / refresh), <strong>Pin</strong> (always-on-top), <strong>Recent</strong> &amp; <strong>Home</strong>, the <strong>URL bar</strong>, <strong>Bookmark</strong>, <strong>Lock</strong> (click-through), <strong>Snap</strong> / <strong>Crop</strong> / <strong>Zoom-to-video</strong>, then <strong>Mute</strong>, <strong>Opacity</strong>, <strong>Settings</strong>, minimize and close.</p>
             <p>You can also press <strong>Ctrl+L</strong> to reveal the strip and focus the URL bar.</p>
             <div class="tutorial-nav">
                 <button class="tutorial-skip" id="tutorial-skip">Skip tutorial</button>
@@ -1983,7 +2031,10 @@
         if (!minutes || minutes <= 0) return;
         autoRefreshTimer = setInterval(() => {
             if (!settingsModal.classList.contains('hidden')) return;
-            if (urlInput === document.activeElement) return;
+            // urlInput lives in a CLOSED shadow root, so document.activeElement
+            // is the shadow host, never the input — must check the shadow root's
+            // own activeElement to detect that the user is editing the URL.
+            if (shadow.activeElement === urlInput) return;
             window.location.reload();
         }, minutes * 60 * 1000);
     }
@@ -2329,8 +2380,14 @@
 
     // Mute state tracking. Reflect whatever the page's media elements
     // are doing, even if the user muted from inside the page (YouTube
-    // 'M' shortcut, Plex's own mute button, etc.). A periodic sweep
-    // plus `volumechange` listeners keep the icon in sync.
+    // 'M' shortcut, Plex's own mute button, etc.). The icon is kept in
+    // sync by per-element `volumechange` listeners, the MutationObserver
+    // that (re)attaches them as media is added/removed, and a re-sync when
+    // the volume popup opens. Note: mute changes that don't surface as a
+    // `volumechange` on a reachable top-document element (media inside a
+    // closed shadow root, a cross-origin iframe, or a player that swaps
+    // the element) can leave the collapsed glyph briefly stale until the
+    // next strip interaction.
     function anyMediaUnmuted() {
         const media = document.querySelectorAll('video, audio');
         if (media.length === 0) return null; // no media at all
@@ -2450,7 +2507,6 @@
     function hideVolumePopup() {
         volumePopup.classList.remove('visible');
         btnMute.classList.remove('dropdown-open');
-        if (!strip.matches(':hover')) scheduleHide();
     }
 
     btnMute.addEventListener('click', (e) => {
@@ -2686,7 +2742,10 @@
                 bookmarksDropdown.classList.contains('visible') ||
                 volumePopup.classList.contains('visible') ||
                 contextMenu.classList.contains('visible') ||
-                urlInput === document.activeElement) {
+                // urlInput is in a CLOSED shadow root: document.activeElement
+                // is the host, so check the shadow root's activeElement to
+                // know the user is typing a URL (else the strip hides mid-type).
+                shadow.activeElement === urlInput) {
                 return;
             }
             hideStrip();
@@ -2711,6 +2770,32 @@
     dragBar.addEventListener('dblclick', () => {
         invoke('maximize_toggle');
     });
+
+    // Window dragging WITHOUT -webkit-app-region:drag (which forces WebView2
+    // to run a synchronous DOM hit-test on the UI thread for every mouse
+    // message, locking the app during scroll/interaction). Instead: arm on a
+    // press over a drag surface (the drag bar, or the strip's empty
+    // background — never a button/input/slider), and only hand off to the OS
+    // via start_drag once the pointer actually moves. A press without
+    // movement stays a click, so double-click-to-maximize still works.
+    let _dragArm = null;
+    function _onDragDown(e) {
+        if (e.button === 0 && (e.target === dragBar || e.target === strip)) {
+            _dragArm = { x: e.clientX, y: e.clientY };
+        }
+    }
+    function _onDragMove(e) {
+        if (!_dragArm || !(e.buttons & 1)) return;
+        if (Math.abs(e.clientX - _dragArm.x) + Math.abs(e.clientY - _dragArm.y) > 3) {
+            _dragArm = null;
+            invoke('start_drag');
+        }
+    }
+    dragBar.addEventListener('mousedown', _onDragDown);
+    strip.addEventListener('mousedown', _onDragDown);
+    dragBar.addEventListener('mousemove', _onDragMove);
+    strip.addEventListener('mousemove', _onDragMove);
+    window.addEventListener('mouseup', () => { _dragArm = null; }, true);
 
     dragBar.addEventListener('mouseenter', () => {
         cancelHide();
@@ -2763,7 +2848,13 @@
         }
     });
 
+    // Tracked via the strip's own enter/leave so other handlers (e.g. the
+    // URL-input blur below) can test hover without calling
+    // strip.matches(':hover'), which forces a synchronous style recalc.
+    let _stripHovered = false;
+
     strip.addEventListener('mouseleave', (e) => {
+        _stripHovered = false;
         // Don't hide if mouse moved to hotzone or drag bar
         if (e.relatedTarget === hotzone || e.relatedTarget === dragBar) {
             return;
@@ -2779,6 +2870,7 @@
     });
 
     strip.addEventListener('mouseenter', () => {
+        _stripHovered = true;
         cancelHide();
         if (dwellTimer) {
             clearTimeout(dwellTimer);
@@ -2786,12 +2878,20 @@
         }
     });
 
+    // Anchor a dropdown panel just below its trigger button, left-aligned,
+    // clamped to the viewport height. Shared by the recent + bookmarks
+    // dropdowns (the snap/volume popups have bespoke positioning).
+    const DROPDOWN_GAP = 8;
+    function anchorBelow(panel, btn) {
+        const rect = btn.getBoundingClientRect();
+        const top = rect.bottom + DROPDOWN_GAP;
+        panel.style.top = top + 'px';
+        panel.style.left = rect.left + 'px';
+        panel.style.maxHeight = Math.max(80, window.innerHeight - top - DROPDOWN_GAP) + 'px';
+    }
+
     function positionDropdown() {
-        const rect = btnRecent.getBoundingClientRect();
-        const top = rect.bottom + 8;
-        recentDropdown.style.top = top + 'px';
-        recentDropdown.style.left = rect.left + 'px';
-        recentDropdown.style.maxHeight = Math.max(80, window.innerHeight - top - 8) + 'px';
+        anchorBelow(recentDropdown, btnRecent);
     }
 
     btnRecent.addEventListener('click', (e) => {
@@ -2807,10 +2907,8 @@
 
     document.addEventListener('click', (e) => {
         if (!strip.contains(e.target) && !recentDropdown.contains(e.target) && !bookmarksDropdown.contains(e.target)) {
-            const hadDropdown = recentDropdown.classList.contains('visible') || bookmarksDropdown.classList.contains('visible');
             recentDropdown.classList.remove('visible');
             bookmarksDropdown.classList.remove('visible');
-            if (hadDropdown && !strip.matches(':hover')) scheduleHide();
         }
         if (!strip.contains(e.target) && !snapPopup.contains(e.target)) {
             snapPopup.classList.remove('visible');
@@ -2830,22 +2928,24 @@
     // page because both the token and this wrapper live inside the IIFE.
     // --------------------------------------------------------------------
 
-    let tauriInvoke = null;
-
     async function invoke(cmd, args = {}) {
-        if (!window.__TAURI__?.core) {
-            // Wait for __TAURI__ to become available (race condition on external pages)
-            for (let i = 0; i < 30; i++) {
+        if (!_ipcInvoke) {
+            // The primitive wasn't present synchronously at init (rare on
+            // external pages where Tauri finishes injecting slightly later).
+            // Poll only __TAURI_INTERNALS__ — never the page-shared
+            // __TAURI__ facade — so a hostile page can't slip a
+            // token-recording wrapper in during this window.
+            for (let i = 0; i < 30 && !_ipcInvoke; i++) {
                 await new Promise(r => setTimeout(r, 50));
-                if (window.__TAURI__?.core) break;
+                const internals = window.__TAURI_INTERNALS__;
+                if (internals && typeof internals.invoke === 'function') {
+                    _ipcInvoke = internals.invoke.bind(internals);
+                }
             }
         }
-        if (!tauriInvoke && window.__TAURI__?.core?.invoke) {
-            tauriInvoke = window.__TAURI__.core.invoke.bind(window.__TAURI__.core);
-        }
-        if (tauriInvoke) {
+        if (_ipcInvoke) {
             try {
-                return await tauriInvoke(cmd, { ...args, token: COMMAND_TOKEN });
+                return await _ipcInvoke(cmd, { ...args, token: COMMAND_TOKEN });
             } catch (e) {
                 console.warn('FloatView: IPC call failed for', cmd, e);
                 return null;
@@ -2878,7 +2978,7 @@
     // If the URL input loses focus while the mouse is outside the strip,
     // schedule a hide so the strip doesn't stay open indefinitely.
     urlInput.addEventListener('blur', () => {
-        if (!strip.matches(':hover')) scheduleHide();
+        if (!_stripHovered) scheduleHide();
     });
 
     urlInput.addEventListener('keydown', async (e) => {
@@ -2928,12 +3028,28 @@
         return Math.round(10 + t * 90);
     }
 
+    // Reflect an externally-driven opacity change (hotkey, tray, or the
+    // opacity-changed event) into every piece of opacity UI: both sliders,
+    // the percentage label, the page-content CSS, and the cached config.
+    // Hoisted so the __floatViewUpdate handler / event listeners can call it.
+    function syncOpacityUI(raw) {
+        const sv = opacityToSlider(raw);
+        opacitySlider.value = sv;
+        settingOpacity.value = sv;
+        settingOpacityValue.textContent = Math.round(raw * 100);
+        applyContentOpacity(raw);
+        if (config) config.window.opacity = raw;
+    }
+
     let _opacityThrottle = null;
     opacitySlider.addEventListener('input', (e) => {
+        const opacity = sliderToOpacity(parseInt(e.target.value, 10));
+        // Apply the local CSS preview on every frame (it's just a custom-
+        // property write, cheap) for a smooth drag; throttle only the native
+        // IPC round-trip. Matches the settings-modal slider's behavior.
+        applyContentOpacity(opacity);
         if (_opacityThrottle) return;
         _opacityThrottle = setTimeout(() => { _opacityThrottle = null; }, 32);
-        const opacity = sliderToOpacity(parseInt(e.target.value, 10));
-        applyContentOpacity(opacity);
         invoke('set_opacity_live', { opacity });
     });
 
@@ -3035,14 +3151,7 @@
 
     // Bookmark functions
     function isBookmarked(url) {
-        return config && config.bookmarks && config.bookmarks.some(b => {
-            if (b === url) return true;
-            try {
-                const bu = new URL(b);
-                const uu = new URL(url);
-                return bu.origin === uu.origin && bu.pathname.replace(/\/+$/, '') === uu.pathname.replace(/\/+$/, '') && bu.search === uu.search;
-            } catch { return false; }
-        });
+        return !!(config && config.bookmarks && config.bookmarks.some(b => urlsMatch(b, url)));
     }
 
     function updateBookmarkIcon() {
@@ -3110,13 +3219,13 @@
     }
 
     function positionBookmarksDropdown() {
-        const rect = btnBookmark.getBoundingClientRect();
-        const top = rect.bottom + 8;
-        bookmarksDropdown.style.top = top + 'px';
-        bookmarksDropdown.style.left = rect.left + 'px';
-        bookmarksDropdown.style.maxHeight = Math.max(80, window.innerHeight - top - 8) + 'px';
+        anchorBelow(bookmarksDropdown, btnBookmark);
     }
 
+    // Client-side bookmark equivalence (origin + trailing-slash-insensitive
+    // path + query). Mirrors Rust `urls_match` in urls.rs — keep the two in
+    // sync. Rust remains authoritative for the actual add/remove dedup; this
+    // copy only drives the star-icon state and dropdown rendering.
     function urlsMatch(a, b) {
         if (a === b) return true;
         try {
@@ -3266,36 +3375,44 @@
         if (_updateMode === 'install') {
             // Already know an update is available — kick off install.
             setUpdateMode('busy', { label: 'Downloading…' });
-            try {
-                const ok = await invoke('install_update');
-                if (ok === false) {
-                    // Raced: the update disappeared between our last
-                    // check and this click. Drop back to check mode.
-                    setUpdateMode('check', { message: 'You\'re up to date!' });
-                }
-                // If ok === true the app is about to restart; no
-                // need to touch the UI further.
-            } catch (e) {
+            const ok = await invoke('install_update');
+            if (ok === true) {
+                // App is about to restart; leave the UI as-is.
+                return;
+            }
+            if (ok === false) {
+                // Raced: the update disappeared between our last
+                // check and this click. Drop back to check mode.
+                setUpdateMode('check', { message: 'You\'re up to date!' });
+            } else {
+                // ok === null: the invoke wrapper swallowed an IPC/command
+                // error to null. Without this branch the button would stay
+                // stuck disabled on a perpetual "Downloading…" spinner. A
+                // `update-install-status` event may already show a detailed
+                // reason — preserve it, otherwise show a generic failure.
+                const prior =
+                    updateStatus.className.indexOf('error') !== -1 ? updateStatus.textContent : '';
                 setUpdateMode('check');
                 updateStatus.className = 'update-status error';
-                updateStatus.textContent = 'Install failed: ' + e;
+                updateStatus.textContent = prior || 'Install failed. Please try again.';
             }
             return;
         }
 
-        // 'check' mode: run a fresh check.
+        // 'check' mode: run a fresh check. check_for_updates returns a
+        // { update } envelope, so null strictly means the check FAILED
+        // (the invoke wrapper returns null on any IPC/command error) and is
+        // distinguishable from a successful "no update available".
         setUpdateMode('busy', { label: 'Checking…' });
-        try {
-            const result = await invoke('check_for_updates');
-            if (result) {
-                setUpdateMode('install', { version: result.version });
-            } else {
-                setUpdateMode('check', { message: 'You\'re up to date!' });
-            }
-        } catch (e) {
+        const result = await invoke('check_for_updates');
+        if (result === null) {
             setUpdateMode('check');
             updateStatus.className = 'update-status error';
-            updateStatus.textContent = 'Check failed: ' + e;
+            updateStatus.textContent = 'Update check failed. Please try again.';
+        } else if (result.update) {
+            setUpdateMode('install', { version: result.update.version });
+        } else {
+            setUpdateMode('check', { message: 'You\'re up to date!' });
         }
     });
 
@@ -3324,9 +3441,15 @@
         if (!hotkeyList) return;
         const hk = (config && config.hotkeys) || {};
         const newState = {};
+        const displays = {};
         const rows = HOTKEY_DEFINITIONS.map(def => {
             const value = hk[def.field] || def.default;
-            const display = formatKey(value);
+            // The displayed binding is config-derived; keep it OUT of the
+            // markup string and assign it via textContent below so a
+            // hotkey value can never inject HTML into this privileged
+            // (token-holding) strip context. def.label/def.default are
+            // developer constants and safe to interpolate.
+            displays[def.field] = formatKey(value);
             const isDefault = value === def.default;
             newState[def.field] = isDefault;
             // Reset icon only renders when the binding diverges from
@@ -3340,14 +3463,16 @@
                     '<span class="settings-label">' + def.label + '</span>' +
                     '<div class="hotkey-controls">' +
                         resetBtn +
-                        '<button class="hotkey-btn" data-hotkey="' + def.field + '" title="Click to rebind">' +
-                            display +
-                        '</button>' +
+                        '<button class="hotkey-btn" data-hotkey="' + def.field + '" title="Click to rebind"></button>' +
                     '</div>' +
                 '</div>'
             );
         }).join('');
         setInner(hotkeyList, rows);
+        for (const def of HOTKEY_DEFINITIONS) {
+            const btn = hotkeyList.querySelector('[data-hotkey="' + def.field + '"]');
+            if (btn) btn.textContent = displays[def.field];
+        }
 
         // Animate icons that just appeared (default → non-default since
         // last render). Skip on first render so reopening settings with
@@ -3533,6 +3658,67 @@
         });
     }
 
+    // --- Modal focus management (accessibility) ---------------------------
+    // Move keyboard focus into a modal when it opens, trap Tab within it, and
+    // restore focus to the triggering control on close. The UI lives in a
+    // closed shadow root, so focus queries use shadow.activeElement and stay
+    // self-contained. Escape-to-close is handled separately (keydown below).
+    let _modalFocusReturn = null;
+
+    function _modalFocusables(modal) {
+        return Array.from(modal.querySelectorAll(
+            'button:not([disabled]), input:not([disabled]), select:not([disabled]),' +
+            ' textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )).filter(el => el.offsetParent !== null); // visible only (skips hidden tutorial steps)
+    }
+
+    function focusModal(modal) {
+        _modalFocusReturn = shadow.activeElement || null;
+        const focusables = _modalFocusables(modal);
+        const target = focusables[0] || modal;
+        if (target === modal && !modal.hasAttribute('tabindex')) {
+            modal.setAttribute('tabindex', '-1');
+        }
+        // Defer to the next frame so focus lands after the modal is shown.
+        requestAnimationFrame(() => { try { target.focus(); } catch (_) {} });
+    }
+
+    function restoreModalFocus() {
+        const el = _modalFocusReturn;
+        _modalFocusReturn = null;
+        if (el && typeof el.focus === 'function') {
+            try { el.focus(); } catch (_) {}
+        }
+    }
+
+    function _activeModal() {
+        if (settingsModal.classList.contains('visible')) return settingsModal;
+        if (tutorialModal.classList.contains('visible')) return tutorialModal;
+        return null;
+    }
+
+    // Trap Tab within whichever modal is open so focus can't wander to the
+    // strip controls behind the dimming overlay.
+    document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Tab') return;
+        const modal = _activeModal();
+        if (!modal) return;
+        const focusables = _modalFocusables(modal);
+        if (focusables.length === 0) { e.preventDefault(); return; }
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        const active = shadow.activeElement;
+        if (e.shiftKey) {
+            if (active === first || !modal.contains(active)) {
+                e.preventDefault();
+                try { last.focus(); } catch (_) {}
+            }
+        } else if (active === last || !modal.contains(active)) {
+            e.preventDefault();
+            try { first.focus(); } catch (_) {}
+        }
+    }, true);
+
     function openSettings() {
         if (config) {
             settingOntop.classList.toggle('active', config.window.always_on_top);
@@ -3548,6 +3734,7 @@
         modalOverlay.classList.add('visible');
         const scrollEl = settingsModal.querySelector('.settings-scroll');
         if (scrollEl) scrollEl.scrollTop = 0;
+        focusModal(settingsModal);
     }
 
     function closeSettings() {
@@ -3555,7 +3742,7 @@
         settingsModal.classList.remove('visible');
         settingsModal.classList.add('hidden');
         modalOverlay.classList.remove('visible');
-        if (!strip.matches(':hover')) scheduleHide();
+        restoreModalFocus();
     }
 
     settingHomeUrl.addEventListener('change', async () => {
@@ -3567,6 +3754,9 @@
 
     settingOntop.addEventListener('click', async () => {
         const result = await invoke('toggle_always_on_top');
+        // Leave the UI untouched on IPC failure (null) — otherwise the
+        // indicators would lie about the real window state. Matches btnPin.
+        if (result === null) return;
         settingOntop.classList.toggle('active', result);
         updatePinIcon(result);
         btnPin.classList.toggle('active', result);
@@ -3574,6 +3764,7 @@
 
     settingLocked.addEventListener('click', async () => {
         const result = await invoke('toggle_locked');
+        if (result === null) return;
         settingLocked.classList.toggle('active', result);
         updateLockIcon(result);
         btnLock.classList.toggle('active', result);
@@ -3663,7 +3854,6 @@
 
     function hideContextMenu() {
         contextMenu.classList.remove('visible');
-        if (!strip.matches(':hover')) scheduleHide();
     }
 
     strip.addEventListener('contextmenu', (e) => {
@@ -3689,6 +3879,7 @@
     ctxOntop.addEventListener('click', async () => {
         hideContextMenu();
         const result = await invoke('toggle_always_on_top');
+        if (result === null) return;
         updatePinIcon(result);
         btnPin.classList.toggle('active', result);
     });
@@ -3696,6 +3887,7 @@
     ctxLocked.addEventListener('click', async () => {
         hideContextMenu();
         const result = await invoke('toggle_locked');
+        if (result === null) return;
         updateLockIcon(result);
         btnLock.classList.toggle('active', result);
         if (result) {
@@ -3727,7 +3919,9 @@
     });
 
     document.addEventListener('keydown', async (e) => {
-        if (e.ctrlKey && e.key === 'l') {
+        // Use e.code (physical key) so the shortcut still fires with Caps
+        // Lock on (where e.key would be 'L') and on non-QWERTY layouts.
+        if (e.ctrlKey && e.code === 'KeyL') {
             e.preventDefault();
             showStrip();
             urlInput.focus();
@@ -3763,7 +3957,7 @@
         tutorialModal.classList.remove('visible');
         tutorialModal.classList.add('hidden');
         modalOverlay.classList.remove('visible');
-        if (!strip.matches(':hover')) scheduleHide();
+        restoreModalFocus();
         if (config) {
             config.first_run = false;
             await invoke('update_config', { config });
@@ -3796,6 +3990,7 @@
         tutorialModal.classList.add('visible');
         modalOverlay.classList.add('visible');
         _tutorialGoToStep(0);
+        focusModal(tutorialModal);
     }
 
     // --------------------------------------------------------------------
@@ -3868,6 +4063,18 @@
                 window.location.href = homeUrl;
                 return;
             }
+            // The home page itself is unreachable (or none is set). For an
+            // unattended always-on display (router rebooting, media server
+            // briefly down, offline at startup) retry the failed page
+            // periodically so it recovers on its own. Each reload re-runs
+            // this script, which re-checks isErrorPage — so retries stop
+            // automatically as soon as a load succeeds. No animated UI is
+            // added (this layered always-on-top window over video is
+            // compositor-sensitive); the strip's Home/Refresh remain usable.
+            const ERROR_RETRY_MS = 20000;
+            setTimeout(() => {
+                if (isErrorPage()) window.location.reload();
+            }, ERROR_RETRY_MS);
         }
 
         // Pre-fill URL bar with current page URL (prefer actual URL over config)
@@ -3907,15 +4114,9 @@
                 }
                 if (config) config.window.locked = value;
                 break;
-            case 'opacity': {
-                const sv = opacityToSlider(value);
-                opacitySlider.value = sv;
-                settingOpacity.value = sv;
-                settingOpacityValue.textContent = Math.round(value * 100);
-                applyContentOpacity(value);
-                if (config) config.window.opacity = value;
+            case 'opacity':
+                syncOpacityUI(value);
                 break;
-            }
             case 'open_settings':
                 container.style.display = '';
                 showStrip();
@@ -3943,14 +4144,7 @@
         const listen = window.__TAURI__.event.listen;
 
         listen('opacity-changed', (event) => {
-            const sv = opacityToSlider(event.payload);
-            opacitySlider.value = sv;
-            settingOpacity.value = sv;
-            settingOpacityValue.textContent = Math.round(event.payload * 100);
-            applyContentOpacity(event.payload);
-            if (config) {
-                config.window.opacity = event.payload;
-            }
+            syncOpacityUI(event.payload);
         });
 
         listen('always-on-top-changed', (event) => {
@@ -4101,7 +4295,12 @@
         if (_initialized) return true;
         if (!document.body) return false;
         document.body.prepend(container);
-        observer.observe(document.body, { childList: true, subtree: true });
+        // childList only (no subtree): the container is always a DIRECT
+        // child of body (or, in fullscreen, the fullscreen element — handled
+        // by the fullscreenchange listener), so we only need to know when
+        // body's own child list changes. Dropping subtree avoids waking this
+        // observer on every deep SPA mutation during video playback/scroll.
+        observer.observe(document.body, { childList: true });
         initConfig();
         _initialized = true;
         return true;

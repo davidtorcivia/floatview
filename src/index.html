@@ -266,6 +266,17 @@
             color: #f8fafc;
             box-shadow: 0 2px 0 rgba(0,0,0,0.2);
         }
+
+        /* Respect the OS "reduce motion" preference: stop the infinite
+           ambient-background rotation and collapse entrance/transition
+           durations (WCAG 2.3.3). */
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
     </style>
 </head>
 <body>
@@ -346,9 +357,10 @@
         const goBtn = document.getElementById('go-btn');
 
         async function navigate() {
-            let url = urlInput.value.trim();
-            if (!url) return;
+            const raw = urlInput.value.trim();
+            if (!raw) return;
 
+            let url = raw;
             if (!url.match(/^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//)) {
                 if (url.includes(' ') || (!url.includes('.') && !url.includes(':'))) {
                     url = 'https://duckduckgo.com/?q=' + encodeURIComponent(url);
@@ -361,12 +373,17 @@
             try {
                 parsed = new URL(url);
             } catch {
-                return;
+                parsed = null;
             }
-            if (!/^https?:$/.test(parsed.protocol)) {
-                return;
+            // Anything that doesn't resolve to an http(s) URL (unparseable, or
+            // an explicit ftp:/file:/etc. scheme) becomes a web search rather
+            // than silently doing nothing — so the Launch button always
+            // responds to input instead of appearing broken.
+            if (!parsed || !/^https?:$/.test(parsed.protocol)) {
+                url = 'https://duckduckgo.com/?q=' + encodeURIComponent(raw);
+            } else {
+                url = parsed.toString();
             }
-            url = parsed.toString();
 
             // Slight delay for button animation
             goBtn.style.transform = 'scale(0.98)';

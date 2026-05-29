@@ -68,11 +68,14 @@ pub struct AppState {
     /// window snaps back to the user's "real" size when they go to a
     /// corner. Cleared by manual user resizes.
     pub pre_snap_size: Mutex<Option<PreSnapSize>>,
-    /// True while a snap-driven `set_size` / `unmaximize` is in flight,
-    /// so the window's `Resized` event handler can distinguish
-    /// programmatic resizes from manual ones (only the latter clears
-    /// `pre_snap_size`).
-    pub snap_resize_in_progress: AtomicBool,
+    /// The exact size the most recent snap/aspect command applied via
+    /// `set_size`. The window's `Resized` handler compares the event size
+    /// against this to tell a programmatic snap resize (keep `pre_snap_size`)
+    /// from a manual edge-drag (clear it). This is timing-independent —
+    /// unlike a boolean "in progress" flag, it stays valid no matter when
+    /// the asynchronous `Resized` event is actually delivered on the main
+    /// event loop. `None` means "any resize is manual."
+    pub snap_expected_size: Mutex<Option<(u32, u32)>>,
 }
 
 /// Constant-time token check would be nice, but this is a local IPC token
