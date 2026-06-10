@@ -144,15 +144,20 @@
                 m.addEventListener('click', updateLast, { passive: true });
             }
         };
-        const observer = new MutationObserver((mutations) => {
-            mutations.forEach((m) => {
-                m.addedNodes.forEach((node) => {
-                    if (node.nodeType === 1) {
-                        if (node.matches && (node.matches('video') || node.matches('audio'))) attach(node);
-                        if (node.querySelectorAll) node.querySelectorAll('video, audio').forEach(attach);
-                    }
-                });
-            });
+        // Debounced: churn-heavy pages (live chat feeds, ad rotators) fire
+        // hundreds of mutation batches per second, and a per-added-node
+        // subtree querySelectorAll made the cost O(churn). One bounded
+        // full-document scan per 150ms window instead — attach() is
+        // idempotent via the dataset guard, so rescanning is free of
+        // double-listeners, and a 150ms attach delay is irrelevant for
+        // "which player did the user touch last" tracking.
+        let scanTimer = null;
+        const observer = new MutationObserver(() => {
+            if (scanTimer) return;
+            scanTimer = setTimeout(() => {
+                scanTimer = null;
+                document.querySelectorAll('video, audio').forEach(attach);
+            }, 150);
         });
         const start = () => {
             document.querySelectorAll('video, audio').forEach(attach);
@@ -192,7 +197,15 @@
         const fvStyle = document.createElement('style');
         fvStyle.id = 'floatview-content-opacity';
         fvStyle.textContent =
-            'body > *:not(#floatview-root) { opacity: var(--fv-content-opacity, 1) !important; }';
+            'body > *:not(#floatview-root) { opacity: var(--fv-content-opacity, 1) !important; }' +
+            // While content is faded, force a black backdrop. CSS opacity
+            // blends content toward the backdrop, and the layered window's
+            // uniform alpha then blends that result with the desktop. A
+            // black backdrop contributes nothing to the final blend, so
+            // faded content reads as "more desktop showing through"; the
+            // default white backdrop instead washes the page out toward a
+            // milky white.
+            ' html.fv-dimmed, html.fv-dimmed body { background: #000 !important; }';
         const attach = () => {
             const parent = document.head || document.documentElement;
             if (parent && !document.getElementById('floatview-content-opacity')) {
@@ -221,6 +234,7 @@
     function applyContentOpacity(raw) {
         const css = computeContentOpacity(raw);
         document.documentElement.style.setProperty('--fv-content-opacity', css.toString());
+        document.documentElement.classList.toggle('fv-dimmed', css < 0.999);
     }
 
     const style = document.createElement('style');
@@ -237,6 +251,17 @@
             --fv-accent-glow:   rgba(220, 170, 110, 0.55);
             --fv-accent-soft:   rgba(200, 140, 80, 0.18);
             --fv-accent-fill:   rgba(200, 140, 80, 0.4);
+
+            /* Radius scale: sm = chips/cells, md = buttons/inputs,
+               lg = dropdowns/popups, xl = modals. */
+            --fv-radius-sm: 6px;
+            --fv-radius-md: 10px;
+            --fv-radius-lg: 12px;
+            --fv-radius-xl: 16px;
+
+            /* Elevation scale: md = dropdowns/popups, lg = modals. */
+            --fv-shadow-md: 0 10px 30px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1);
+            --fv-shadow-lg: 0 20px 60px rgba(0,0,0,0.18), 0 4px 12px rgba(0,0,0,0.1);
             --fv-accent-text:   #e8b87a;
         }
 
@@ -309,7 +334,7 @@
             -webkit-app-region: no-drag;
             cursor: grab;
             border: none;
-            border-radius: 12px;
+            border-radius: var(--fv-radius-lg);
             box-shadow: 0 8px 24px rgba(0,0,0,0.15), 0 2px 4px rgba(0,0,0,0.1);
             z-index: 2147483647;
         }
@@ -339,7 +364,7 @@
             min-width: 36px;
             height: 36px;
             padding: 0;
-            border-radius: 10px;
+            border-radius: var(--fv-radius-md);
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -413,7 +438,7 @@
         .btn.zoom-not-found {
             background: rgba(244, 67, 54, 0.35);
             color: #fff;
-            transition: background 0.15s ease-out, color 0.15s ease-out;
+            transition: background 0.15s var(--fv-out), color 0.15s var(--fv-out);
         }
 
         /* Refresh-on-click spin. Triggered by JS — page navigation
@@ -437,6 +462,14 @@
             animation: fv-pop 0.34s var(--fv-spring);
         }
 
+        /* Text selection inside the strip and modals: the UA default
+           highlight is illegible against this dark theme, so tint it
+           with the accent. Scoped to the shadow root by construction. */
+        ::selection {
+            background: rgba(200, 140, 80, 0.55);
+            color: #fff;
+        }
+
         .url-display {
             -webkit-app-region: no-drag;
             flex: 1;
@@ -445,11 +478,21 @@
             background: rgba(255,255,255,0.08);
             border: 1px solid rgba(255,255,255,0.1);
             color: #fff;
+            /* Lighter accent tone: a 1px caret needs the extra contrast
+               against the dark field. */
+            caret-color: rgba(220, 170, 110, 1);
             padding: 0 14px;
-            border-radius: 10px;
+            border-radius: var(--fv-radius-md);
             font-size: 13px;
             font-family: inherit;
-            line-height: 36px;
+            /* Inputs center single-line text on their own. An inflated
+               line-height (36px, the old approach) makes the selection
+               highlight and the caret span the full bar height, which
+               looks wrong — keep line-height at text scale instead. */
+            line-height: 1.4;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
             outline: none;
             transition:
                 background 0.18s var(--fv-swift),
@@ -531,7 +574,7 @@
             backdrop-filter: blur(24px);
             -webkit-backdrop-filter: blur(24px);
             border: none;
-            border-radius: 12px;
+            border-radius: var(--fv-radius-lg);
             min-width: 240px;
             max-width: min(360px, calc(100vw - 60px));
             max-height: 280px;
@@ -540,7 +583,7 @@
             transform: translateY(-4px) scale(0.97);
             pointer-events: none;
             transition: opacity 0.18s ease-out, transform 0.18s ease-out;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1);
+            box-shadow: var(--fv-shadow-md);
         }
 
         .recent-dropdown.visible {
@@ -596,14 +639,19 @@
             transform: scaleY(1);
         }
 
+        .recent-item:focus-visible {
+            outline: 2px solid rgba(200, 140, 80, 0.75);
+            outline-offset: -2px;
+        }
+
         .recent-item.current {
-            color: rgba(255,255,255,0.5);
+            color: rgba(255,255,255,0.65);
         }
 
         .recent-empty {
             padding: 16px;
             font-size: 13px;
-            color: rgba(255,255,255,0.4);
+            color: rgba(255,255,255,0.55);
             text-align: center;
         }
 
@@ -615,7 +663,7 @@
             /* DIAGNOSTIC: backdrop-filter removed (see .modal-overlay note). */
             background: linear-gradient(160deg, rgba(40, 40, 46, 0.97), rgba(30, 30, 36, 0.95));
             border: none;
-            border-radius: 16px;
+            border-radius: var(--fv-radius-xl);
             padding: 0;
             /* Cap to the viewport so the panel body never overflows / clips
                horizontally on a narrow window (defense-in-depth alongside the
@@ -624,7 +672,7 @@
             max-width: min(440px, calc(100vw - 32px));
             max-height: 80vh;
             overflow: visible;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.18), 0 4px 12px rgba(0,0,0,0.1);
+            box-shadow: var(--fv-shadow-lg);
             z-index: 2147483647;
             pointer-events: none;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -677,7 +725,7 @@
             align-items: center;
             justify-content: center;
             padding: 0;
-            transition: all 0.15s ease;
+            transition: all 0.15s var(--fv-swift);
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
             z-index: 1;
         }
@@ -710,7 +758,7 @@
         .settings-section-title {
             font-size: 11px;
             font-weight: 600;
-            color: rgba(255,255,255,0.5);
+            color: rgba(255,255,255,0.6);
             text-transform: uppercase;
             letter-spacing: 0.8px;
             margin-bottom: 12px;
@@ -731,7 +779,7 @@
 
         .settings-value {
             font-size: 13px;
-            color: rgba(255,255,255,0.5);
+            color: rgba(255,255,255,0.65);
             font-family: 'SF Mono', Monaco, monospace;
         }
 
@@ -742,7 +790,7 @@
             background: rgba(255,255,255,0.06);
             border: 1px solid transparent;
             padding: 5px 10px;
-            border-radius: 6px;
+            border-radius: var(--fv-radius-sm);
             cursor: pointer;
             min-width: 130px;
             text-align: center;
@@ -895,14 +943,34 @@
             outline: none;
         }
 
+        /* Mirrors .opacity-slider's thumb (16px, spring hover/active,
+           accent focus halo) so the strip and settings sliders read as
+           the same control. */
         .settings-slider::-webkit-slider-thumb {
             -webkit-appearance: none;
-            width: 18px;
-            height: 18px;
+            width: 16px;
+            height: 16px;
             background: #fff;
             border-radius: 50%;
             cursor: pointer;
             box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+            transition:
+                box-shadow 0.2s var(--fv-out),
+                transform 0.18s var(--fv-spring);
+        }
+
+        .settings-slider:hover::-webkit-slider-thumb {
+            transform: scale(1.12);
+            box-shadow: 0 2px 6px rgba(0,0,0,0.28), 0 0 0 4px rgba(200, 140, 80, 0.18);
+        }
+
+        .settings-slider:active::-webkit-slider-thumb {
+            transform: scale(1.18);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.35), 0 0 0 5px rgba(200, 140, 80, 0.28);
+        }
+
+        .settings-slider:focus-visible::-webkit-slider-thumb {
+            box-shadow: 0 2px 6px rgba(0,0,0,0.28), 0 0 0 4px rgba(200, 140, 80, 0.45);
         }
 
         .settings-btn {
@@ -910,7 +978,7 @@
             border: 1px solid rgba(255,255,255,0.12);
             color: #fff;
             padding: 10px 20px;
-            border-radius: 10px;
+            border-radius: var(--fv-radius-md);
             font-size: 14px;
             font-family: inherit;
             cursor: pointer;
@@ -980,15 +1048,16 @@
             backdrop-filter: blur(24px);
             -webkit-backdrop-filter: blur(24px);
             border: none;
-            border-radius: 12px;
+            border-radius: var(--fv-radius-lg);
             min-width: 180px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1);
-            z-index: 2147483647;
+            box-shadow: var(--fv-shadow-md);
             pointer-events: none;
             padding: 6px 0;
             opacity: 0;
             transform: scale(0.97);
-            transition: opacity 0.15s ease-out, transform 0.15s ease-out;
+            /* Matches the recent/bookmarks/snap dropdown timing so every
+               popup animates identically. */
+            transition: opacity 0.18s var(--fv-out), transform 0.18s var(--fv-out);
         }
 
         .context-menu.visible {
@@ -1034,8 +1103,13 @@
         }
 
         .context-menu-item.disabled {
-            color: rgba(255,255,255,0.3);
+            color: rgba(255,255,255,0.45);
             pointer-events: none;
+        }
+
+        .context-menu-item:focus-visible {
+            outline: 2px solid rgba(200, 140, 80, 0.75);
+            outline-offset: -2px;
         }
 
         .context-menu-divider {
@@ -1133,13 +1207,13 @@
             /* DIAGNOSTIC: backdrop-filter removed (see .modal-overlay note). */
             background: linear-gradient(160deg, rgba(40, 40, 46, 0.97), rgba(30, 30, 36, 0.95));
             border: none;
-            border-radius: 16px;
+            border-radius: var(--fv-radius-xl);
             padding: 32px;
             width: 480px;
             max-width: 90vw;
             max-height: 80vh;
             overflow-y: auto;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.18), 0 4px 12px rgba(0,0,0,0.1);
+            box-shadow: var(--fv-shadow-lg);
             z-index: 2147483647;
             pointer-events: none;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -1239,11 +1313,11 @@
             border: 1px solid rgba(255,255,255,0.12);
             color: #fff;
             padding: 10px 20px;
-            border-radius: 10px;
+            border-radius: var(--fv-radius-md);
             font-size: 14px;
             font-family: inherit;
             cursor: pointer;
-            transition: all 0.15s ease;
+            transition: all 0.15s var(--fv-swift);
             min-height: 40px;
         }
 
@@ -1269,7 +1343,7 @@
             font-family: inherit;
             cursor: pointer;
             padding: 8px 4px;
-            transition: color 0.1s;
+            transition: color 0.16s var(--fv-swift);
         }
 
         .tutorial-skip:hover {
@@ -1309,9 +1383,9 @@
             backdrop-filter: blur(24px);
             -webkit-backdrop-filter: blur(24px);
             border: none;
-            border-radius: 12px;
+            border-radius: var(--fv-radius-lg);
             padding: 8px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.1);
+            box-shadow: var(--fv-shadow-md);
             z-index: 2147483647;
             pointer-events: none;
             opacity: 0;
@@ -1377,7 +1451,7 @@
         .snap-cell {
             background: rgba(255,255,255,0.06);
             border: none;
-            border-radius: 6px;
+            border-radius: var(--fv-radius-sm);
             cursor: pointer;
             color: rgba(255,255,255,0.55);
             font-size: 14px;
@@ -1464,7 +1538,7 @@
             -webkit-backdrop-filter: blur(12px);
             color: rgba(255,255,255,0.8);
             padding: 10px 20px;
-            border-radius: 10px;
+            border-radius: var(--fv-radius-md);
             font-size: 13px;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             pointer-events: none;
@@ -1796,7 +1870,7 @@
     const settingsModal = document.createElement('div');
     settingsModal.className = 'settings-modal hidden';
     setInner(settingsModal, `
-        <button class="settings-close-btn" id="btn-close-settings-x" title="Close">${icons.close}</button>
+        <button class="settings-close-btn" id="btn-close-settings-x" title="Close (Esc)">${icons.close}</button>
         <div class="settings-scroll">
         <div class="settings-title">Settings</div>
 
@@ -2618,47 +2692,33 @@
 
     // Attach volumechange listeners to newly-inserted media elements
     // so page-side mute toggles (e.g., YouTube's 'M' shortcut) keep
-    // our button icon in sync. Only calls `updateMuteIcon` when media
-    // is actually added or removed — YouTube-scale DOM churn would
-    // otherwise hammer a full-document query on every mutation batch.
-    const _muteObserver = new MutationObserver((mutations) => {
-        let mediaChanged = false;
-        for (const m of mutations) {
-            for (const node of m.addedNodes) {
-                if (node.nodeType !== 1) continue;
-                const isMedia = node.matches && (node.matches('video') || node.matches('audio'));
-                if (isMedia) {
-                    attachVolumeListener(node);
-                    mediaChanged = true;
-                }
-                if (node.querySelectorAll) {
-                    const nested = node.querySelectorAll('video, audio');
-                    if (nested.length > 0) {
-                        nested.forEach(attachVolumeListener);
-                        mediaChanged = true;
-                    }
-                }
-            }
-            if (!mediaChanged) {
-                for (const node of m.removedNodes) {
-                    if (node.nodeType !== 1) continue;
-                    if (node.matches && (node.matches('video') || node.matches('audio'))) {
-                        mediaChanged = true;
-                        break;
-                    }
-                    if (node.querySelector && node.querySelector('video, audio')) {
-                        mediaChanged = true;
-                        break;
-                    }
-                }
-            }
-        }
-        if (mediaChanged) updateMuteIcon();
+    // our button icon in sync. Debounced to one bounded full-document
+    // scan per 150ms window — YouTube-scale DOM churn would otherwise
+    // pay a per-added-node subtree query on every mutation batch.
+    // `updateMuteIcon` still only fires when the media set actually
+    // changed (count delta or a not-yet-tracked element appeared).
+    let _lastMediaCount = -1;
+    let _muteScanTimer = null;
+    const _muteObserver = new MutationObserver(() => {
+        if (_muteScanTimer) return;
+        _muteScanTimer = setTimeout(() => {
+            _muteScanTimer = null;
+            const media = document.querySelectorAll('video, audio');
+            let mediaChanged = media.length !== _lastMediaCount;
+            _lastMediaCount = media.length;
+            media.forEach((el) => {
+                if (!el.dataset.floatviewMuteTracked) mediaChanged = true;
+                attachVolumeListener(el);
+            });
+            if (mediaChanged) updateMuteIcon();
+        }, 150);
     });
     (function startMuteObserver() {
         const root = document.documentElement || document.body;
         if (root) _muteObserver.observe(root, { childList: true, subtree: true });
-        document.querySelectorAll('video, audio').forEach(attachVolumeListener);
+        const media = document.querySelectorAll('video, audio');
+        _lastMediaCount = media.length;
+        media.forEach(attachVolumeListener);
         updateMuteIcon();
     })();
 
@@ -2703,10 +2763,19 @@
             }
             item.dataset.url = url;
             item.textContent = url;
-            item.addEventListener('click', async () => {
+            // Keyboard access: tabbable, Enter/Space activates.
+            item.tabIndex = 0;
+            const activate = async () => {
                 if (url && !item.classList.contains('current')) {
                     recentDropdown.classList.remove('visible');
                     await navigateToUrl(url);
+                }
+            };
+            item.addEventListener('click', activate);
+            item.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    activate();
                 }
             });
             recentDropdown.appendChild(item);
@@ -2903,6 +2972,8 @@
         }
         recentDropdown.classList.toggle('visible', !isVisible);
         bookmarksDropdown.classList.remove('visible');
+        snapPopup.classList.remove('visible');
+        hideVolumePopup();
     });
 
     document.addEventListener('click', (e) => {
@@ -2934,11 +3005,19 @@
             // external pages where Tauri finishes injecting slightly later).
             // Poll only __TAURI_INTERNALS__ — never the page-shared
             // __TAURI__ facade — so a hostile page can't slip a
-            // token-recording wrapper in during this window.
+            // token-recording wrapper in during this window. Defense in
+            // depth: also require the sibling primitives Tauri always
+            // ships alongside invoke (transformCallback / convertFileSrc).
+            // A page minting a bare {invoke} decoy during the poll window
+            // fails the shape check; this raises the bar rather than being
+            // a hard boundary, since the page could fake those too.
             for (let i = 0; i < 30 && !_ipcInvoke; i++) {
                 await new Promise(r => setTimeout(r, 50));
                 const internals = window.__TAURI_INTERNALS__;
-                if (internals && typeof internals.invoke === 'function') {
+                if (internals &&
+                    typeof internals.invoke === 'function' &&
+                    typeof internals.transformCallback === 'function' &&
+                    typeof internals.convertFileSrc === 'function') {
                     _ipcInvoke = internals.invoke.bind(internals);
                 }
             }
@@ -2979,6 +3058,30 @@
     // schedule a hide so the strip doesn't stay open indefinitely.
     urlInput.addEventListener('blur', () => {
         if (!_stripHovered) scheduleHide();
+    });
+
+    // Browser-URL-bar selection behavior: the first click into the field
+    // selects the whole URL (the common intent is replace-or-copy), and a
+    // second click places the caret normally. The mouseup guard is needed
+    // because the click's own mouseup would otherwise collapse the
+    // selection made in the focus handler. Only applies to the strip's
+    // bar — the same class in Settings (home URL) keeps plain caret
+    // placement, since there the common intent is editing.
+    let _urlSelectAllPending = false;
+    urlInput.addEventListener('focus', () => {
+        _urlSelectAllPending = true;
+        urlInput.select();
+    });
+    urlInput.addEventListener('mousedown', () => {
+        // Already focused (e.g. via Tab) → this click is caret placement,
+        // not the focusing click; don't suppress its mouseup.
+        if (shadow.activeElement === urlInput) _urlSelectAllPending = false;
+    });
+    urlInput.addEventListener('mouseup', (e) => {
+        if (_urlSelectAllPending) {
+            _urlSelectAllPending = false;
+            e.preventDefault();
+        }
     });
 
     urlInput.addEventListener('keydown', async (e) => {
@@ -3086,6 +3189,7 @@
         snapPopup.classList.toggle('visible', !isVisible);
         recentDropdown.classList.remove('visible');
         bookmarksDropdown.classList.remove('visible');
+        hideVolumePopup();
     });
 
     snapPopup.addEventListener('click', async (e) => {
@@ -3201,7 +3305,11 @@
             removeBtn.addEventListener('mouseleave', () => { removeBtn.style.opacity = '0.4'; });
             removeBtn.addEventListener('click', async (e) => {
                 e.stopPropagation();
-                await invoke('remove_bookmark', { url });
+                // Only drop the local copy if Rust confirmed the removal
+                // (invoke maps IPC failure to null); otherwise the dropdown
+                // would diverge from the persisted bookmark list.
+                const ok = await invoke('remove_bookmark', { url });
+                if (ok === null) return;
                 if (config) {
                     config.bookmarks = config.bookmarks.filter(u => u !== url && !urlsMatch(u, url));
                 }
@@ -3210,9 +3318,18 @@
             });
             item.appendChild(label);
             item.appendChild(removeBtn);
-            item.addEventListener('click', async () => {
+            // Keyboard access: tabbable, Enter/Space activates.
+            item.tabIndex = 0;
+            const activate = async () => {
                 bookmarksDropdown.classList.remove('visible');
                 await navigateToUrl(url);
+            };
+            item.addEventListener('click', activate);
+            item.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    activate();
+                }
             });
             bookmarksDropdown.appendChild(item);
         });
@@ -3251,14 +3368,18 @@
         const currentUrl = window.location.href;
         bookmarkPop();
         if (isBookmarked(currentUrl)) {
-            await invoke('remove_bookmark', { url: currentUrl });
+            // Gate the local update on Rust confirming (null = IPC failure)
+            // so the star/dropdown can't diverge from the persisted list.
+            const ok = await invoke('remove_bookmark', { url: currentUrl });
+            if (ok === null) return;
             if (config) {
                 config.bookmarks = config.bookmarks.filter(u => u !== currentUrl && !urlsMatch(u, currentUrl));
             }
             updateBookmarkIcon();
             updateBookmarksDropdown();
         } else {
-            await invoke('add_bookmark', { url: currentUrl });
+            const ok = await invoke('add_bookmark', { url: currentUrl });
+            if (ok === null) return;
             if (config) {
                 config.bookmarks = await getBookmarksFromRust();
             }
@@ -3277,6 +3398,8 @@
         }
         bookmarksDropdown.classList.toggle('visible', !isVisible);
         recentDropdown.classList.remove('visible');
+        snapPopup.classList.remove('visible');
+        hideVolumePopup();
     });
 
     // --------------------------------------------------------------------
@@ -3289,6 +3412,11 @@
         if (title !== _lastTitle) {
             _lastTitle = title;
             invoke('set_window_title', { title });
+            // The page may have swapped in a brand-new <title> element,
+            // which silently detaches the observer — re-attach. observe()
+            // on an already-observed node just refreshes the options, so
+            // this is idempotent.
+            observeTitle();
         }
     }
     const _titleObserver = new MutationObserver(updateWindowTitle);
@@ -3298,7 +3426,10 @@
             _titleObserver.observe(titleEl, { childList: true, characterData: true, subtree: true });
         }
     }
-    setInterval(updateWindowTitle, 2000);
+    // The observer handles realtime updates; this slow poll only covers
+    // SPAs that replace the <title> element itself (which detaches the
+    // observer). 10s keeps the steady-state work negligible.
+    setInterval(updateWindowTitle, 10000);
 
     // Track URL changes on navigation (back/forward/spa navigation)
     let _lastTrackedUrl = window.location.href;
@@ -3312,7 +3443,32 @@
         }
     }
     window.addEventListener('popstate', trackUrlChange);
-    setInterval(trackUrlChange, 3000);
+    window.addEventListener('hashchange', trackUrlChange);
+    // popstate does NOT fire for programmatic pushState/replaceState — the
+    // way every SPA router navigates — so wrap them with a thin shim that
+    // calls through then syncs. Deferred a tick so the router finishes
+    // updating location before we read it.
+    (function hookHistoryNavigation() {
+        const wrap = (name) => {
+            // try/catch: a page that freezes `history` would make this
+            // assignment throw under 'use strict' and kill the whole
+            // init — degrade to the slow poll instead.
+            try {
+                const original = history[name];
+                if (typeof original !== 'function') return;
+                history[name] = function(...args) {
+                    const result = original.apply(this, args);
+                    setTimeout(trackUrlChange, 0);
+                    return result;
+                };
+            } catch (_) {}
+        };
+        wrap('pushState');
+        wrap('replaceState');
+    })();
+    // Slow fallback for SPAs that mutate location through other means
+    // (location.hash assignments are covered above; this catches the rest).
+    setInterval(trackUrlChange, 10000);
 
     const settingOntop = settingsModal.querySelector('#setting-ontop');
     const settingLocked = settingsModal.querySelector('#setting-locked');
@@ -3552,7 +3708,18 @@
         // re_register_hotkeys also registers, but a second register on
         // top of the same set is harmless and keeps the cleanup simple.
         if (!cap.savedHotkey) {
-            invoke('resume_global_hotkeys').catch(() => {});
+            resumeHotkeysWithRetry();
+        }
+    }
+
+    // A failed resume would leave every global hotkey dead until app
+    // restart (invoke maps IPC failures to null instead of throwing), so
+    // retry once before giving up loudly.
+    async function resumeHotkeysWithRetry() {
+        if (await invoke('resume_global_hotkeys') !== null) return;
+        await new Promise(r => setTimeout(r, 500));
+        if (await invoke('resume_global_hotkeys') === null) {
+            console.error('FloatView: failed to resume global hotkeys after rebind; restart the app if hotkeys stay dead');
         }
     }
 

@@ -975,7 +975,7 @@ dependencies = [
 
 [[package]]
 name = "floatview"
-version = "1.4.6"
+version = "1.4.7"
 dependencies = [
  "cocoa",
  "objc",

@@ -52,10 +52,14 @@ pub fn normalize_url(raw: &str) -> Result<String, String> {
 
 /// Compare two URLs for bookmark-style equivalence.
 ///
-/// Equal if identical, or if origin + path (trailing-slash-insensitive) +
-/// query match. Fragments are ignored. Used to dedup bookmarks and recent
-/// history across minor variations that the user would consider "the same
-/// page."
+/// Equal if identical, or if origin + userinfo + path
+/// (trailing-slash-insensitive) + query match. Fragments are ignored. Used
+/// to dedup bookmarks and recent history across minor variations that the
+/// user would consider "the same page."
+///
+/// Userinfo is compared explicitly because `Url::origin()` excludes it
+/// (RFC 6454): without the check, `https://user:pass@host/` would silently
+/// dedup against plain `https://host/` and drop the credentialed bookmark.
 pub fn urls_match(a: &str, b: &str) -> bool {
     if a == b {
         return true;
@@ -63,6 +67,8 @@ pub fn urls_match(a: &str, b: &str) -> bool {
     let Ok(ua) = Url::parse(a) else { return false };
     let Ok(ub) = Url::parse(b) else { return false };
     ua.origin() == ub.origin()
+        && ua.username() == ub.username()
+        && ua.password() == ub.password()
         && ua.path().trim_end_matches('/') == ub.path().trim_end_matches('/')
         && ua.query() == ub.query()
 }
@@ -110,6 +116,22 @@ mod tests {
         assert!(!urls_match(
             "https://example.com/?q=1",
             "https://example.com/?q=2"
+        ));
+    }
+
+    #[test]
+    fn urls_match_distinguishes_userinfo() {
+        assert!(!urls_match(
+            "https://user:pass@example.com/",
+            "https://example.com/"
+        ));
+        assert!(!urls_match(
+            "https://alice@example.com/",
+            "https://bob@example.com/"
+        ));
+        assert!(urls_match(
+            "https://user:pass@example.com/path",
+            "https://user:pass@example.com/path/"
         ));
     }
 

@@ -250,6 +250,8 @@ Configuration files are stored separately and not removed by default:
 
 This program will not transfer any information to other networked systems unless specifically requested by the user. The only automated network request is the optional **Check for Updates** feature in Settings, which queries the [GitHub Releases API](https://github.com/davidtorcivia/floatview/releases) to check for new versions. No personal data, telemetry, or usage statistics are collected or transmitted.
 
+Note that, like most desktop browsers, FloatView stores its settings — including bookmarks, recent URLs, and the last visited page — as plain-text JSON in your local app-data folder. Anyone with access to your user account (or disk) can read that file, so treat shared machines accordingly. **Clear Recent** / **Clear Bookmarks** in Settings remove those lists, and **Clear Site Data** wipes the webview's cookies and storage.
+
 ## License
 
 [MIT](LICENSE)

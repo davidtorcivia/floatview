@@ -382,7 +382,14 @@ pub fn clear_startup_click_through_with<F: FnOnce()>(
             apply_to_window();
             Some(c.clone())
         }
-        _ => None,
+        Ok(_) => None,
+        Err(e) => {
+            // Recovery is a safety invariant — if it can't run, the user
+            // may boot into an unclickable window. Say so loudly; the
+            // tray's Click-Through item remains the manual escape hatch.
+            tracing::error!("startup click-through recovery skipped (config mutex poisoned): {e}");
+            None
+        }
     };
     match snapshot {
         Some(cfg) => {

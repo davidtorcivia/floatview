@@ -1,4 +1,4 @@
-# FloatView — Technical Design Document (v3, updated for v1.1.0)
+# FloatView — Technical Design Document (v4, updated for v1.4.7)
 
 ## Overview
 

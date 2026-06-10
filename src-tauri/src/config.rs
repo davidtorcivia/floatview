@@ -104,8 +104,21 @@ pub struct CropConfig {
     pub height: f64,
 }
 
+/// Current config schema version. Bump ONLY when a field is renamed,
+/// retyped, or restructured — plain additions are covered by
+/// `#[serde(default)]`. Load code can branch on the stored value to
+/// migrate old files instead of silently resetting user data.
+pub const CONFIG_VERSION: u32 = 1;
+
+fn default_config_version() -> u32 {
+    // Pre-1.4.7 configs have no version field; they are schema v1.
+    CONFIG_VERSION
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
+    #[serde(default = "default_config_version")]
+    pub config_version: u32,
     pub window: WindowConfig,
     pub last_url: Option<String>,
     pub recent_urls: Option<Vec<String>>,
@@ -133,6 +146,7 @@ fn default_true() -> bool {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
+            config_version: CONFIG_VERSION,
             window: WindowConfig::default(),
             last_url: None,
             recent_urls: Some(Vec::new()),

@@ -159,11 +159,13 @@ pub async fn pause_global_hotkeys(
     app: AppHandle,
     state: tauri::State<'_, AppState>,
     token: String,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     authorize_command(&state, &token, "pause_global_hotkeys")?;
     use tauri_plugin_global_shortcut::GlobalShortcutExt;
     let _ = app.global_shortcut().unregister_all();
-    Ok(())
+    // bool (not unit) so the JS invoke wrapper — which maps IPC failures
+    // to null — can tell success apart from failure.
+    Ok(true)
 }
 
 /// Re-register global shortcuts from the current config. Pair with
@@ -174,10 +176,11 @@ pub async fn resume_global_hotkeys(
     app: AppHandle,
     state: tauri::State<'_, AppState>,
     token: String,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     authorize_command(&state, &token, "resume_global_hotkeys")?;
     crate::hotkeys::register_hotkeys(&app);
-    Ok(())
+    // See pause_global_hotkeys for why this returns bool, not unit.
+    Ok(true)
 }
 
 #[tauri::command]
@@ -680,10 +683,15 @@ pub async fn set_window_title(
 /// Truncate a window title to a Win32-safe byte length, respecting UTF-8 char
 /// boundaries. A naive `&s[..253]` panics when byte 253 lands inside a
 /// multi-byte codepoint, which any page can trigger by crafting a title.
+///
+/// Control characters are stripped first: the title is page-supplied, and
+/// embedded control codes (newlines, NUL, C0/C1) can garble taskbar/title
+/// rendering or spoof multi-line text.
 fn truncate_title(title: &str) -> String {
     const MAX_BYTES: usize = 256;
+    let title: String = title.chars().filter(|c| !c.is_control()).collect();
     if title.len() <= MAX_BYTES {
-        return title.to_string();
+        return title;
     }
     let ellipsis = "...";
     let budget = MAX_BYTES - ellipsis.len();
@@ -702,12 +710,12 @@ pub async fn add_bookmark(
     state: tauri::State<'_, AppState>,
     url: String,
     token: String,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     authorize_command(&state, &token, "add_bookmark")?;
     let url = normalize_url(&url)?;
     let mut config = state.config.lock().map_err(|e| e.to_string())?;
     if config.bookmarks.iter().any(|b| urls_match(b, &url)) {
-        return Ok(());
+        return Ok(true);
     }
     if config.bookmarks.len() >= MAX_BOOKMARKS {
         return Err(format!("Bookmark limit reached (max {MAX_BOOKMARKS})"));
@@ -715,7 +723,9 @@ pub async fn add_bookmark(
     config.bookmarks.push(url);
     save_config(&state, &config);
     drop(config);
-    Ok(())
+    // Returns a value (not unit) so the JS invoke wrapper — which maps IPC
+    // failures to null — can tell success apart from failure.
+    Ok(true)
 }
 
 #[tauri::command]
@@ -723,14 +733,16 @@ pub async fn remove_bookmark(
     state: tauri::State<'_, AppState>,
     url: String,
     token: String,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     authorize_command(&state, &token, "remove_bookmark")?;
     let url = normalize_url(&url)?;
     let mut config = state.config.lock().map_err(|e| e.to_string())?;
     config.bookmarks.retain(|u| !urls_match(u, &url));
     save_config(&state, &config);
     drop(config);
-    Ok(())
+    // Returns a value (not unit) so the JS invoke wrapper — which maps IPC
+    // failures to null — can tell success apart from failure.
+    Ok(true)
 }
 
 #[tauri::command]
@@ -802,6 +814,14 @@ mod tests {
     fn truncate_title_passes_short_titles_unchanged() {
         let title = "Short title";
         assert_eq!(truncate_title(title), title);
+    }
+
+    #[test]
+    fn truncate_title_strips_control_characters() {
+        assert_eq!(
+            truncate_title("Line one\nLine two\r\0\u{1b}[31m"),
+            "Line oneLine two[31m"
+        );
     }
 
     #[test]

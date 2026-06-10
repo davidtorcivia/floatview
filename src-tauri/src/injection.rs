@@ -24,8 +24,10 @@ const ALPHA_FLOOR_PLACEHOLDER: &str = "__FLOATVIEW_ALPHA_FLOOR__";
 /// floor is rendered as an ASCII decimal; the JS side wraps it in
 /// `parseFloat(...)` so the pre-substitution template is still valid JS.
 pub fn build_injection_script(command_token: &str, home_url: &str) -> String {
-    let home_literal = serde_json::to_string(home_url)
-        .unwrap_or_else(|_| "\"\"".to_string());
+    let home_literal = serde_json::to_string(home_url).unwrap_or_else(|e| {
+        tracing::warn!("failed to serialize home_url into init script, falling back to empty: {e}");
+        "\"\"".to_string()
+    });
     let alpha_floor = format!("{}", crate::opacity::WINDOW_ALPHA_FLOOR);
     // Substitute the untrusted, user-controlled home URL LAST so no later
     // `replace` re-scans it. The token (a v4 UUID) and the alpha floor (an

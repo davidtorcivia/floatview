@@ -34,7 +34,8 @@ cd src-tauri && cargo test   # Run unit tests
 ```
 floatview/
 ├── src/
-│   └── index.html              # Landing page (URL input)
+│   ├── index.html              # Landing page (URL input)
+│   └── main.js                 # Landing page logic (external so the CSP can stay strict)
 ├── src-tauri/
 │   ├── src/
 │   │   ├── main.rs             # Binary shim; just calls `floatview::run()`
@@ -165,6 +166,7 @@ This ensures that:
 
 ```rust
 pub struct AppConfig {
+    pub config_version: u32,        // schema version; bump on rename/restructure, NOT additions
     pub window: WindowConfig,       // x, y, width, height, monitor, always_on_top, opacity, locked
     pub last_url: Option<String>,
     pub recent_urls: Option<Vec<String>>,
@@ -176,6 +178,8 @@ pub struct AppConfig {
     pub crop: Option<CropConfig>,   // x, y, width, height (0-1 normalized)
 }
 ```
+
+New fields only need `#[serde(default)]`. If you rename, retype, or restructure a field, bump `CONFIG_VERSION` in `config.rs` and branch on the stored `config_version` during load so old configs migrate instead of silently resetting.
 
 ### Tray Menu Dynamic Updates
 
@@ -273,9 +277,15 @@ Key injection.js features:
 
 17. **Opacity clamping** -- Always go through `config::clamp_opacity`; it snaps near-opaque to 1.0 (lets the Windows backend drop `WS_EX_LAYERED`) and rejects non-finite inputs that would otherwise poison the saved config.
 
-18. **Title truncation** -- `set_window_title` calls `truncate_title`, which respects UTF-8 char boundaries. Do NOT revert to `&title[..N]` slicing; it panics on multi-byte codepoints that any page can craft into a title.
+17b. **Opacity dim backdrop** -- Below full opacity, page content is faded with CSS (`--fv-content-opacity`) while the window alpha floors at `WINDOW_ALPHA_FLOOR`. While faded, `applyContentOpacity` puts an `fv-dimmed` class on `<html>` that forces a **black** html/body backdrop: CSS opacity blends content toward the backdrop, and under the layered window's uniform alpha a black backdrop reads as "desktop showing through" whereas the default white backdrop washes the page out to milky white. Don't remove the class toggle when touching the opacity path.
+
+17c. **Unit-returning commands look like failures in JS** -- The JS `invoke()` wrapper returns `null` on IPC failure, and Tauri serializes `Result<(), _>` success as `null` too. Commands whose callers need to distinguish success (bookmarks, pause/resume hotkeys) return `Ok(true)` instead of `Ok(())`. Follow that pattern for new commands when the JS side gates state changes on success.
+
+18. **Title truncation** -- `set_window_title` calls `truncate_title`, which strips control characters (page-supplied titles can embed newlines/NUL to garble or spoof the title bar) and respects UTF-8 char boundaries. Do NOT revert to `&title[..N]` slicing; it panics on multi-byte codepoints that any page can craft into a title.
 
 19. **Capabilities** -- The `global-shortcut` plugin's JS register/unregister permissions are NOT granted. Hotkey management is Rust-only; don't add those permissions without a matching JS feature.
+
+20. **CSP** -- `tauri.conf.json` sets a strict CSP that applies to the app's own pages (the landing page) only — external sites bring their own. It allows `script-src 'self'` and no inline scripts, which is why the landing page logic lives in `src/main.js` instead of an inline `<script>`. Keep it that way; Tauri appends its own nonces for the scripts it injects.
 
 ## Testing
 

@@ -5,17 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FloatView</title>
     <style>
+        /* Shares the control strip's design language (injection.js):
+           warm-orange accent on neutral dark grays, the same easing
+           curves, and the same radius scale. Keep the two in sync. */
         :root {
-            --bg-color: #0f172a;
-            --glass-bg: rgba(30, 41, 59, 0.6);
+            --fv-swift: cubic-bezier(0.4, 0, 0.2, 1);
+            --fv-out:   cubic-bezier(0.22, 0.9, 0.36, 1.05);
+
+            --bg-color: #1a1a1f;
+            --glass-bg: rgba(40, 40, 46, 0.6);
             --glass-border: rgba(255, 255, 255, 0.1);
             --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-            --text-primary: #f8fafc;
-            --text-secondary: #94a3b8;
-            --accent: #3b82f6;
-            --accent-hover: #2563eb;
-            --input-bg: rgba(15, 23, 42, 0.4);
-            --input-focus-border: rgba(59, 130, 246, 0.5);
+            --text-primary: #ffffff;
+            --text-secondary: rgba(255, 255, 255, 0.6);
+            --accent: rgba(200, 140, 80, 1);
+            --accent-hover: rgba(210, 150, 90, 1);
+            --accent-glow: rgba(220, 170, 110, 0.55);
+            --input-bg: rgba(26, 26, 31, 0.5);
+            --input-focus-border: rgba(220, 170, 110, 0.55);
         }
 
         * {
@@ -27,6 +34,11 @@
 
         input {
             user-select: auto;
+        }
+
+        ::selection {
+            background: rgba(200, 140, 80, 0.55);
+            color: #fff;
         }
 
         body {
@@ -47,9 +59,9 @@
             left: -50%;
             width: 200%;
             height: 200%;
-            background: radial-gradient(circle at 50% 50%, rgba(59, 130, 246, 0.15), transparent 40%),
-                        radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.15), transparent 40%),
-                        radial-gradient(circle at 20% 80%, rgba(16, 185, 129, 0.1), transparent 40%);
+            background: radial-gradient(circle at 50% 50%, rgba(200, 140, 80, 0.13), transparent 40%),
+                        radial-gradient(circle at 80% 20%, rgba(220, 170, 110, 0.10), transparent 40%),
+                        radial-gradient(circle at 20% 80%, rgba(160, 110, 70, 0.10), transparent 40%);
             animation: rotateBg 30s linear infinite;
             z-index: -1;
             pointer-events: none;
@@ -67,11 +79,11 @@
             backdrop-filter: blur(16px);
             -webkit-backdrop-filter: blur(16px);
             border: 1px solid var(--glass-border);
-            border-radius: 20px;
+            border-radius: 16px;
             padding: 32px;
             box-shadow: var(--glass-shadow);
             text-align: center;
-            animation: fadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+            animation: fadeIn 0.5s var(--fv-out);
         }
 
         @keyframes fadeIn {
@@ -87,12 +99,12 @@
             width: 48px;
             height: 48px;
             margin: 0 auto 16px;
-            background: linear-gradient(135deg, var(--accent), #8b5cf6);
+            background: linear-gradient(135deg, rgba(200, 140, 80, 0.95), rgba(220, 170, 110, 0.85));
             border-radius: 12px;
             display: flex;
             align-items: center;
             justify-content: center;
-            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+            box-shadow: 0 4px 14px -2px var(--accent-glow);
         }
 
         .logo-icon svg {
@@ -110,7 +122,7 @@
             font-weight: 700;
             letter-spacing: -0.5px;
             margin-bottom: 8px;
-            background: linear-gradient(to right, #fff, #cbd5e1);
+            background: linear-gradient(to right, #fff, #d9cfc4);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
@@ -131,22 +143,26 @@
             padding: 14px 16px 14px 44px;
             font-size: 15px;
             border: 1px solid var(--glass-border);
-            border-radius: 12px;
+            border-radius: 10px;
             background: var(--input-bg);
             color: var(--text-primary);
+            caret-color: var(--accent);
             outline: none;
-            transition: all 0.2s ease;
+            transition:
+                background 0.18s var(--fv-swift),
+                border-color 0.2s var(--fv-out),
+                box-shadow 0.24s var(--fv-out);
             box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
         }
 
         .url-input:focus {
             border-color: var(--input-focus-border);
-            background: rgba(15, 23, 42, 0.6);
-            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2), inset 0 2px 4px rgba(0,0,0,0.1);
+            background: rgba(26, 26, 31, 0.7);
+            box-shadow: 0 0 0 3px rgba(200, 140, 80, 0.14), inset 0 2px 4px rgba(0,0,0,0.1);
         }
 
         .url-input::placeholder {
-            color: #64748b;
+            color: rgba(255, 255, 255, 0.45);
         }
 
         .input-icon {
@@ -156,7 +172,7 @@
             transform: translateY(-50%);
             width: 18px;
             height: 18px;
-            color: #64748b;
+            color: rgba(255, 255, 255, 0.45);
             pointer-events: none;
         }
 
@@ -166,12 +182,15 @@
             font-size: 15px;
             font-weight: 600;
             border: none;
-            border-radius: 12px;
-            background: var(--accent);
+            border-radius: 10px;
+            background: linear-gradient(135deg, rgba(200, 140, 80, 0.95), rgba(220, 170, 110, 0.85));
             color: #fff;
             cursor: pointer;
-            transition: all 0.2s ease;
-            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+            transition:
+                background 0.18s var(--fv-swift),
+                transform 0.16s var(--fv-out),
+                box-shadow 0.22s var(--fv-out);
+            box-shadow: 0 4px 12px -2px rgba(200, 140, 80, 0.35);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -179,20 +198,25 @@
         }
 
         .btn:hover {
-            background: var(--accent-hover);
+            background: linear-gradient(135deg, var(--accent-hover), rgba(230, 180, 120, 0.92));
             transform: translateY(-1px);
-            box-shadow: 0 6px 16px rgba(59, 130, 246, 0.3);
+            box-shadow: 0 6px 18px -2px var(--accent-glow);
         }
 
         .btn:active {
             transform: translateY(1px);
-            box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
+            box-shadow: 0 2px 8px -2px rgba(200, 140, 80, 0.35);
+        }
+
+        .btn:focus-visible {
+            outline: 2px solid rgba(200, 140, 80, 0.75);
+            outline-offset: 2px;
         }
 
         .btn svg {
             width: 18px;
             height: 18px;
-            transition: transform 0.2s ease;
+            transition: transform 0.2s var(--fv-out);
         }
 
         .btn:hover svg {
@@ -202,7 +226,7 @@
         .shortcuts {
             margin-top: 32px;
             text-align: left;
-            background: rgba(15, 23, 42, 0.3);
+            background: rgba(26, 26, 31, 0.35);
             border: 1px solid var(--glass-border);
             border-radius: 12px;
             padding: 20px;
@@ -240,7 +264,7 @@
             justify-content: space-between;
             align-items: center;
             font-size: 13px;
-            color: #cbd5e1;
+            color: rgba(255, 255, 255, 0.75);
             padding-bottom: 8px;
             border-bottom: 1px solid rgba(255, 255, 255, 0.05);
         }
@@ -263,7 +287,7 @@
             border-radius: 6px;
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
             font-size: 11px;
-            color: #f8fafc;
+            color: #ffffff;
             box-shadow: 0 2px 0 rgba(0,0,0,0.2);
         }
 
@@ -352,52 +376,6 @@
         </div>
     </div>
 
-    <script type="module">
-        const urlInput = document.getElementById('url-input');
-        const goBtn = document.getElementById('go-btn');
-
-        async function navigate() {
-            const raw = urlInput.value.trim();
-            if (!raw) return;
-
-            let url = raw;
-            if (!url.match(/^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//)) {
-                if (url.includes(' ') || (!url.includes('.') && !url.includes(':'))) {
-                    url = 'https://duckduckgo.com/?q=' + encodeURIComponent(url);
-                } else {
-                    url = 'https://' + url;
-                }
-            }
-
-            let parsed;
-            try {
-                parsed = new URL(url);
-            } catch {
-                parsed = null;
-            }
-            // Anything that doesn't resolve to an http(s) URL (unparseable, or
-            // an explicit ftp:/file:/etc. scheme) becomes a web search rather
-            // than silently doing nothing — so the Launch button always
-            // responds to input instead of appearing broken.
-            if (!parsed || !/^https?:$/.test(parsed.protocol)) {
-                url = 'https://duckduckgo.com/?q=' + encodeURIComponent(raw);
-            } else {
-                url = parsed.toString();
-            }
-
-            // Slight delay for button animation
-            goBtn.style.transform = 'scale(0.98)';
-            setTimeout(() => {
-                window.location.href = url;
-            }, 100);
-        }
-
-        goBtn.addEventListener('click', navigate);
-        urlInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                navigate();
-            }
-        });
-    </script>
+    <script type="module" src="main.js"></script>
 </body>
 </html>
