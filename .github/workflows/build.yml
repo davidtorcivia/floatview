@@ -8,7 +8,27 @@ on:
   workflow_dispatch:
 
 jobs:
+  # The nightly release is a rolling "latest main" build, but uploads only
+  # ever ADDED assets — versioned filenames never collided across pushes,
+  # so artifacts from every old version accumulated forever (and a second
+  # push on the same version failed with already_exists). Wipe the release
+  # and its tag before building so tauri-action recreates both fresh at
+  # the current commit. Runs as a no-op gate on tag pushes so `needs:`
+  # stays simple.
+  reset-nightly:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Delete previous nightly release and tag
+        if: github.ref_type != 'tag'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete nightly --repo "${{ github.repository }}" --cleanup-tag --yes || echo "no nightly release to delete"
+
   build:
+    needs: reset-nightly
     permissions:
       contents: write
     strategy:
