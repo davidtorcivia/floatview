@@ -131,47 +131,28 @@
 
     // Track most recently interacted media element for global hotkeys.
     // Script runs at document_created so document.body may not exist yet —
-    // defer the observer until DOM is ready.
+    // the observer wiring is deferred until DOM is ready (handled by the
+    // merged media/mute observer further down; this block just defines
+    // the listener + does an initial attach pass).
     window.__floatViewLastMedia = null;
-    (function trackMediaInteractions() {
-        const updateLast = (e) => { window.__floatViewLastMedia = e.target; };
-        const attach = (m) => {
-            if (!m.dataset.floatviewTracked) {
-                m.dataset.floatviewTracked = '1';
-                m.addEventListener('play', updateLast, { passive: true });
-                m.addEventListener('pause', updateLast, { passive: true });
-                m.addEventListener('volumechange', updateLast, { passive: true });
-                m.addEventListener('click', updateLast, { passive: true });
-            }
-        };
-        // Debounced: churn-heavy pages (live chat feeds, ad rotators) fire
-        // hundreds of mutation batches per second, and a per-added-node
-        // subtree querySelectorAll made the cost O(churn). One bounded
-        // full-document scan per 150ms window instead — attach() is
-        // idempotent via the dataset guard, so rescanning is free of
-        // double-listeners, and a 150ms attach delay is irrelevant for
-        // "which player did the user touch last" tracking.
-        let scanTimer = null;
-        const observer = new MutationObserver(() => {
-            if (scanTimer) return;
-            scanTimer = setTimeout(() => {
-                scanTimer = null;
-                document.querySelectorAll('video, audio').forEach(attach);
-            }, 150);
-        });
-        const start = () => {
-            document.querySelectorAll('video, audio').forEach(attach);
-            const root = document.documentElement || document.body;
-            if (root) observer.observe(root, { childList: true, subtree: true });
-        };
+    const _mediaUpdateLast = (e) => { window.__floatViewLastMedia = e.target; };
+    function _attachMediaInteraction(m) {
+        if (!m.dataset.floatviewTracked) {
+            m.dataset.floatviewTracked = '1';
+            m.addEventListener('play', _mediaUpdateLast, { passive: true });
+            m.addEventListener('pause', _mediaUpdateLast, { passive: true });
+            m.addEventListener('volumechange', _mediaUpdateLast, { passive: true });
+            m.addEventListener('click', _mediaUpdateLast, { passive: true });
+        }
+    }
+    (function attachMediaInteractionsInitially() {
+        const run = () => document.querySelectorAll('video, audio').forEach(_attachMediaInteraction);
         if (document.body) {
-            start();
+            run();
         } else if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', start, { once: true });
+            document.addEventListener('DOMContentLoaded', run, { once: true });
         } else {
-            // documentElement exists even pre-body; observe it immediately so we
-            // catch the <body> insertion and any media added before DOMContentLoaded.
-            start();
+            run();
         }
     })();
 
@@ -2681,22 +2662,21 @@
         updateMuteIcon();
     }, { passive: false });
 
-    // Attach volumechange listeners to current and future media
-    // elements so page-side mute toggles (YouTube 'M' shortcut etc.)
-    // keep the button icon in sync.
-    function attachVolumeListener(el) {
-        if (el.dataset.floatviewMuteTracked) return;
-        el.dataset.floatviewMuteTracked = '1';
-        el.addEventListener('volumechange', updateMuteIcon, { passive: true });
-    }
-
-    // Attach volumechange listeners to newly-inserted media elements
-    // so page-side mute toggles (e.g., YouTube's 'M' shortcut) keep
-    // our button icon in sync. Debounced to one bounded full-document
-    // scan per 150ms window — YouTube-scale DOM churn would otherwise
-    // pay a per-added-node subtree query on every mutation batch.
-    // `updateMuteIcon` still only fires when the media set actually
-    // changed (count delta or a not-yet-tracked element appeared).
+    // Single merged MutationObserver for both media-related concerns:
+    // (a) attaching volumechange listeners for the mute-button icon
+    //     (page-side mute toggles like YouTube's 'M' shortcut), and
+    // (b) attaching play/pause/volumechange/click listeners that feed
+    //     `window.__floatViewLastMedia` so global media hotkeys target
+    //     the most recently interacted player.
+    // Previously these were two independent observers, each with its own
+    // 150ms debounce timer and its own full-document
+    // `querySelectorAll('video, audio')` scan per churn window — on a
+    // churny page (live chat, ad rotators) both fired. One observer +
+    // one scan halves the per-batch cost. Both attach helpers are
+    // idempotent via their `dataset` guards, so a single shared scan is
+    // free of double-listeners. `updateMuteIcon` only fires when the
+    // media set actually changed (count delta or a not-yet-tracked
+    // element appeared).
     let _lastMediaCount = -1;
     let _muteScanTimer = null;
     const _muteObserver = new MutationObserver(() => {
@@ -2708,18 +2688,34 @@
             _lastMediaCount = media.length;
             media.forEach((el) => {
                 if (!el.dataset.floatviewMuteTracked) mediaChanged = true;
+                _attachMediaInteraction(el);
                 attachVolumeListener(el);
             });
             if (mediaChanged) updateMuteIcon();
         }, 150);
     });
     (function startMuteObserver() {
-        const root = document.documentElement || document.body;
-        if (root) _muteObserver.observe(root, { childList: true, subtree: true });
-        const media = document.querySelectorAll('video, audio');
-        _lastMediaCount = media.length;
-        media.forEach(attachVolumeListener);
-        updateMuteIcon();
+        const start = () => {
+            const root = document.documentElement || document.body;
+            if (root) _muteObserver.observe(root, { childList: true, subtree: true });
+            const media = document.querySelectorAll('video, audio');
+            _lastMediaCount = media.length;
+            media.forEach((el) => {
+                _attachMediaInteraction(el);
+                attachVolumeListener(el);
+            });
+            updateMuteIcon();
+        };
+        if (document.body) {
+            start();
+        } else if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', start, { once: true });
+        } else {
+            // documentElement exists even pre-body; observe it immediately so
+            // we catch the <body> insertion and any media added before
+            // DOMContentLoaded — mirrors the media-interaction block above.
+            start();
+        }
     })();
 
     let _snapFlashTimer1 = null;
@@ -3339,16 +3335,29 @@
         anchorBelow(bookmarksDropdown, btnBookmark);
     }
 
-    // Client-side bookmark equivalence (origin + trailing-slash-insensitive
-    // path + query). Mirrors Rust `urls_match` in urls.rs — keep the two in
-    // sync. Rust remains authoritative for the actual add/remove dedup; this
-    // copy only drives the star-icon state and dropdown rendering.
+    // Client-side bookmark equivalence (origin + userinfo +
+    // trailing-slash-insensitive path + query). Mirrors Rust `urls_match`
+    // in urls.rs — keep the two in sync, and keep the shared truth table
+    // in src-tauri/src/url_fixtures.rs (exercised on the JS side by
+    // js/urltest.test.mjs) updated when you change either. Rust remains
+    // authoritative for the actual add/remove dedup; this copy only
+    // drives the star-icon state and dropdown rendering.
+    //
+    // Userinfo (username/password) IS compared: `URL.origin` excludes it
+    // (RFC 6454), so without an explicit check a `user:pass@host`
+    // bookmark would read as "already bookmarked" against a plain `host`
+    // URL and the star icon would lie. This previously diverged from the
+    // Rust side, which always compared userinfo.
     function urlsMatch(a, b) {
         if (a === b) return true;
         try {
             const ua = new URL(a);
             const ub = new URL(b);
-            return ua.origin === ub.origin && ua.pathname.replace(/\/+$/, '') === ub.pathname.replace(/\/+$/, '') && ua.search === ub.search;
+            return ua.origin === ub.origin
+                && ua.username === ub.username
+                && ua.password === ub.password
+                && ua.pathname.replace(/\/+$/, '') === ub.pathname.replace(/\/+$/, '')
+                && ua.search === ub.search;
         } catch { return false; }
     }
 

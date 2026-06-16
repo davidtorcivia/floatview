@@ -2,11 +2,30 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <!--
+      Hardened-runtime entitlements. Kept as narrow as possible:
+
+      - allow-jit: required for the WKWebView/JavaScriptCore JIT that the
+        Tauri shell relies on for page execution. Dropping this would
+        force JIT-LESS mode and tank page performance.
+
+      Deliberately NOT granted (previously cargo-culted from Tauri
+      templates; nothing in this app uses them):
+        - com.apple.security.cs.allow-unsigned-executable-memory
+          Only needed for runtimes that map writable+executable memory
+          themselves (some game engines, older JIT runtimes). WKWebView
+          handles this internally under allow-jit.
+        - com.apple.security.cs.allow-dyld-environment-variables
+          Only needed for dynamic-linker injection (DYLD_INSERT_LIBRARIES),
+          which this app never uses; granting it widens the attack
+          surface for library injection.
+
+      If a future macOS build regression appears right after a change
+      here, the fastest revert is to re-add the dropped keys above. The
+      macOS build is gated in CI (.github/workflows/build.yml) so a
+      breakage surfaces on the next push, not at release.
+    -->
     <key>com.apple.security.cs.allow-jit</key>
-    <true/>
-    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
-    <true/>
-    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
     <true/>
 </dict>
 </plist>

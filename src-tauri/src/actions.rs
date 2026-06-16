@@ -74,15 +74,36 @@ pub fn do_install_update(app: &AppHandle) {
     });
 }
 
-pub async fn install_update(app: AppHandle) -> Result<bool, String> {
+/// Check for an update and, if one exists, download + install it.
+///
+/// `on_chunk` receives `(chunk_bytes, total_bytes)` deltas during the
+/// download so callers can drive a progress UI; pass a no-op for the
+/// silent tray path. Returns `Ok(true)` if an update was installed,
+/// `Ok(false)` if none was available, `Err(_)` on failure. The caller
+/// owns restart-on-success and status-event emission — those differ
+/// between the tray (best-effort, restarts from `do_install_update`) and
+/// the JS command (emits granular status + restarts itself), so they
+/// stay at the call sites rather than being baked in here.
+pub async fn install_update_with_progress<F>(
+    app: AppHandle,
+    mut on_chunk: F,
+) -> Result<bool, String>
+where
+    F: FnMut(u64, Option<u64>) + Send + 'static,
+{
     let updater = app.updater().map_err(|e| e.to_string())?;
-    if let Some(update) = updater.check().await.map_err(|e| e.to_string())? {
-        info!(version = %update.version, "Installing update from native action");
-        update
-            .download_and_install(|_, _| {}, || {})
-            .await
-            .map_err(|e| e.to_string())?;
-        return Ok(true);
-    }
-    Ok(false)
+    let Some(update) = updater.check().await.map_err(|e| e.to_string())? else {
+        return Ok(false);
+    };
+    info!(version = %update.version, "Installing update from native action");
+    update
+        .download_and_install(move |chunk, total| on_chunk(chunk as u64, total), || {})
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+pub async fn install_update(app: AppHandle) -> Result<bool, String> {
+    // Silent tray path: no per-chunk progress reporting.
+    install_update_with_progress(app, |_, _| {}).await
 }

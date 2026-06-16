@@ -62,10 +62,7 @@ pub fn update_window_geometry_config(
 /// Skips minimized/maximized windows (preserving whatever was saved last
 /// time the window was a normal restorable size) and windows reporting
 /// dimensions below `MIN_WINDOW_SIZE` (treated as a transient bad read).
-pub fn persist_window_geometry(
-    window: &WebviewWindow,
-    state: &AppState,
-) -> Result<(), String> {
+pub fn persist_window_geometry(window: &WebviewWindow, state: &AppState) -> Result<(), String> {
     if window.is_minimized().map_err(|e| e.to_string())? {
         debug!("Skipping geometry persistence because window is minimized");
         return Ok(());
@@ -102,13 +99,7 @@ pub fn persist_window_geometry(
 /// Is the saved geometry within a reasonable overlap of *any* current
 /// monitor? Used to avoid restoring a window onto a now-disconnected
 /// display, where it would be invisible.
-pub fn is_position_visible(
-    monitors: &[Monitor],
-    x: i32,
-    y: i32,
-    width: i32,
-    height: i32,
-) -> bool {
+pub fn is_position_visible(monitors: &[Monitor], x: i32, y: i32, width: i32, height: i32) -> bool {
     const MIN_OVERLAP: i64 = 50;
     // Compute overlap in i64 so a corrupt/tampered config with x/y near
     // i32::MAX/MIN can't overflow `x + width` (which would panic in debug

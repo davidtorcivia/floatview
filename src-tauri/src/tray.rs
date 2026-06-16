@@ -30,7 +30,7 @@ use tracing::{error, warn};
 use crate::actions::{
     do_install_update, do_navigate_home, do_toggle_always_on_top, do_toggle_locked,
 };
-use crate::state::{AppState, TrayBoolSetter, TrayUpdateSetter, TraySetters};
+use crate::state::{AppState, TrayBoolSetter, TraySetters, TrayUpdateSetter};
 use crate::window_state::persist_window_geometry;
 
 const INSTALL_UPDATE_IDLE_LABEL: &str = "No Updates Available";
@@ -70,13 +70,8 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     // useful when hover reveal is disabled by the page but JS still
     // works. Both accessible from the always-present tray.
     let reload_page = MenuItem::with_id(app, "reload_page", "Reload Page", true, None::<&str>)?;
-    let show_strip_item = MenuItem::with_id(
-        app,
-        "show_strip",
-        "Show Control Strip",
-        true,
-        None::<&str>,
-    )?;
+    let show_strip_item =
+        MenuItem::with_id(app, "show_strip", "Show Control Strip", true, None::<&str>)?;
 
     // Install update: disabled + placeholder label until a check finds
     // something. The background updater thread and the settings "Check"
@@ -113,7 +108,12 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     // Install setters so state changes from elsewhere (hotkeys, strip
     // buttons, settings, background updater) can feed back into the
     // tray without the rest of the code touching tray/muda types.
-    install_setters(app, toggle_top.clone(), toggle_lock.clone(), install_update.clone());
+    install_setters(
+        app,
+        toggle_top.clone(),
+        toggle_lock.clone(),
+        install_update.clone(),
+    );
 
     // Fallback icon: a 1x1 transparent pixel so a missing asset can't
     // crash startup in dev/test. Never hit in a packaged build.

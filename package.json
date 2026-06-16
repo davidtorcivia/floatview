@@ -1,11 +1,12 @@
 {
   "name": "floatview",
-  "version": "1.4.7",
+  "version": "1.5.0",
   "description": "A minimal floating browser window for streaming media on a secondary monitor",
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev",
-    "build": "tauri build"
+    "build": "tauri build",
+    "test": "node --test \"js/**/*.test.mjs\""
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

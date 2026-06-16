@@ -218,12 +218,10 @@ mod tests {
         // because the home URL is substituted last (regression test for the
         // earlier ordering bug where the trailing alpha-floor replace rewrote
         // the sentinel inside the already-inserted home URL).
-        let script = build_injection_script(
-            "tkn",
-            "https://example.com/__FLOATVIEW_ALPHA_FLOOR__",
-        );
+        let script = build_injection_script("tkn", "https://example.com/__FLOATVIEW_ALPHA_FLOOR__");
         assert!(
-            script.contains(r#"EMBEDDED_HOME_URL = "https://example.com/__FLOATVIEW_ALPHA_FLOOR__""#),
+            script
+                .contains(r#"EMBEDDED_HOME_URL = "https://example.com/__FLOATVIEW_ALPHA_FLOOR__""#),
             "home URL containing a placeholder sentinel must not be corrupted"
         );
     }

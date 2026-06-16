@@ -146,7 +146,12 @@ pub fn sanitize_config(mut config: AppConfig) -> AppConfig {
             // Ensure crop stays within viewport bounds after width/height clamp.
             let x = crop.x.clamp(0.0, 1.0 - width);
             let y = crop.y.clamp(0.0, 1.0 - height);
-            config.crop = Some(CropConfig { x, y, width, height });
+            config.crop = Some(CropConfig {
+                x,
+                y,
+                width,
+                height,
+            });
         }
     }
 
@@ -382,7 +387,9 @@ mod tests {
     #[test]
     fn sanitize_config_enforces_bookmark_limit() {
         let config = AppConfig {
-            bookmarks: (0..100).map(|i| format!("https://site{}.com/", i)).collect(),
+            bookmarks: (0..100)
+                .map(|i| format!("https://site{}.com/", i))
+                .collect(),
             ..AppConfig::default()
         };
         let sanitized = sanitize_config(config);

@@ -27,8 +27,49 @@ jobs:
         run: |
           gh release delete nightly --repo "${{ github.repository }}" --cleanup-tag --yes || echo "no nightly release to delete"
 
-  build:
+  # Fast fail gate: runs the Rust + JS test/lint suites on a cheap Linux
+  # runner in parallel with the reset-nightly gate, and the build matrix
+  # waits on it so a formatting slip, clippy warning, or failing test
+  # blocks the release artifacts rather than being discovered mid-build.
+  lint:
     needs: reset-nightly
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Rust stable (with fmt + clippy)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: cargo fmt --check
+        working-directory: src-tauri
+        run: cargo fmt --check
+
+      - name: cargo clippy (-D warnings)
+        working-directory: src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: cargo test
+        working-directory: src-tauri
+        run: cargo test
+
+      - name: Install Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: node --test (JS url helpers)
+        run: node --test "js/**/*.test.mjs"
+
+  build:
+    needs: [reset-nightly, lint]
     permissions:
       contents: write
     strategy:

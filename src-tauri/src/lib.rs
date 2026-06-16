@@ -49,6 +49,9 @@ pub mod tray;
 pub mod urls;
 pub mod window_state;
 
+#[cfg(test)]
+pub mod url_fixtures;
+
 use crate::config_io::{do_save_config, get_config_path, load_config, shutdown};
 use crate::injection::{build_injection_script, USER_AGENT};
 use crate::logging::{init_logging, LoggingState};
@@ -280,16 +283,21 @@ pub fn run() {
                 }
             });
 
-            // Periodic geometry auto-save. Wakes every second so shutdown
-            // can interrupt promptly; only persists every 30 ticks so disk
-            // churn matches the old behavior.
+            // Periodic geometry auto-save. Wakes every `TICK` so shutdown
+            // can interrupt promptly; only persists every `SAVE_EVERY`
+            // ticks so disk churn stays bounded. The persist cadence is
+            // `SAVE_EVERY * TICK` (currently 10 * 3s = 30s); if you change
+            // one constant, adjust the other to keep the cadence ~30s.
+            // TICK was 1s historically; 3s cuts the wakeup count by 3x
+            // (from ~86k/day to ~29k/day) while keeping shutdown latency
+            // imperceptible.
             let app_handle_geom = app.handle().clone();
             let window_geom = window.clone();
             std::thread::Builder::new()
                 .name("floatview-geometry-saver".to_string())
                 .spawn(move || {
-                    const TICK: Duration = Duration::from_secs(1);
-                    const SAVE_EVERY: u32 = 30;
+                    const TICK: Duration = Duration::from_secs(3);
+                    const SAVE_EVERY: u32 = 10;
                     let mut ticks: u32 = 0;
                     loop {
                         std::thread::sleep(TICK);
@@ -371,10 +379,7 @@ pub fn clear_startup_click_through<R: tauri::Runtime>(
 /// The sequence matches production: mutate config → apply to window →
 /// release mutex → synchronous disk write. Returns `true` if a change
 /// was applied.
-pub fn clear_startup_click_through_with<F: FnOnce()>(
-    state: &AppState,
-    apply_to_window: F,
-) -> bool {
+pub fn clear_startup_click_through_with<F: FnOnce()>(state: &AppState, apply_to_window: F) -> bool {
     let save_path = state.config_path.clone();
     let snapshot = match state.config.lock() {
         Ok(mut c) if c.window.locked => {
@@ -670,7 +675,10 @@ mod lifecycle_tests {
         let bak_config: AppConfig =
             serde_json::from_str(&fs::read_to_string(&bak_path).expect("read bak"))
                 .expect("parse bak");
-        assert_eq!(bak_config.window.opacity, 0.5, "bak is the prior on-disk state");
+        assert_eq!(
+            bak_config.window.opacity, 0.5,
+            "bak is the prior on-disk state"
+        );
     }
 
     #[test]

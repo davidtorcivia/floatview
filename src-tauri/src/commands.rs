@@ -5,12 +5,14 @@
 //! around helpers in `config_io`, `window_state`, etc.
 
 use tauri::{AppHandle, Emitter, WebviewWindow};
-use url::Url;
 use tauri_plugin_updater::UpdaterExt;
+use url::Url;
 
 use crate::browsing_data;
 use crate::config::{clamp_opacity, AppConfig, CropConfig};
-use crate::config_io::{persist_recent_url, sanitize_config, save_config, CROP_MIN_DIM, MAX_BOOKMARKS};
+use crate::config_io::{
+    persist_recent_url, sanitize_config, save_config, CROP_MIN_DIM, MAX_BOOKMARKS,
+};
 use crate::opacity;
 use crate::ops;
 use crate::state::{authorize_command, AppState};
@@ -237,31 +239,15 @@ pub async fn snap_window(
     let (eff_w, eff_h) = restored_size.unwrap_or((ww, wh));
 
     let (mut x, mut y, new_size) = match position.as_str() {
-        "top-left" => (
-            mx + padding,
-            my + padding,
-            restored_size,
-        ),
-        "top-right" => (
-            mx + mw - eff_w - padding,
-            my + padding,
-            restored_size,
-        ),
-        "bottom-left" => (
-            mx + padding,
-            my + mh - eff_h - padding,
-            restored_size,
-        ),
+        "top-left" => (mx + padding, my + padding, restored_size),
+        "top-right" => (mx + mw - eff_w - padding, my + padding, restored_size),
+        "bottom-left" => (mx + padding, my + mh - eff_h - padding, restored_size),
         "bottom-right" => (
             mx + mw - eff_w - padding,
             my + mh - eff_h - padding,
             restored_size,
         ),
-        "center" => (
-            mx + (mw - eff_w) / 2,
-            my + (mh - eff_h) / 2,
-            restored_size,
-        ),
+        "center" => (mx + (mw - eff_w) / 2, my + (mh - eff_h) / 2, restored_size),
         "left-half" => {
             let w = ((mw - 3 * padding) / 2).max(MIN_WINDOW_SIZE);
             let h = (mh - 2 * padding).max(MIN_WINDOW_SIZE);
@@ -304,8 +290,13 @@ pub async fn snap_window(
     // Save current size so a follow-up corner snap can restore it.
     if matches!(
         position.as_str(),
-        "left-half" | "right-half" | "top-half" | "bottom-half"
-            | "left-third" | "center-third" | "right-third"
+        "left-half"
+            | "right-half"
+            | "top-half"
+            | "bottom-half"
+            | "left-third"
+            | "center-third"
+            | "right-third"
     ) {
         if let Ok(mut pre) = state.pre_snap_size.lock() {
             if pre.is_none() {
@@ -415,8 +406,8 @@ pub async fn set_aspect_ratio(
 ) -> Result<(), String> {
     authorize_command(&state, &token, "set_aspect_ratio")?;
 
-    let (rw, rh) = parse_aspect_ratio(&ratio)
-        .ok_or_else(|| format!("Invalid aspect ratio: {}", ratio))?;
+    let (rw, rh) =
+        parse_aspect_ratio(&ratio).ok_or_else(|| format!("Invalid aspect ratio: {}", ratio))?;
 
     let monitor = window
         .current_monitor()
@@ -492,7 +483,10 @@ pub async fn set_aspect_ratio(
         .map_err(|e| e.to_string())?;
 
     window
-        .set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: new_x, y: new_y }))
+        .set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+            x: new_x,
+            y: new_y,
+        }))
         .map_err(|e| e.to_string())?;
 
     persist_window_geometry(&window, &state)?;
@@ -624,41 +618,37 @@ pub async fn install_update(
 ) -> Result<bool, String> {
     authorize_command(&state, &token, "install_update")?;
 
-    let updater = app.updater().map_err(|e| e.to_string())?;
-    let update = match updater.check().await.map_err(|e| e.to_string())? {
-        Some(u) => u,
-        None => return Ok(false),
-    };
-
     let _ = app.emit("update-install-status", "Downloading update…");
 
     let app_for_progress = app.clone();
     let mut downloaded: u64 = 0;
-    let result = update
-        .download_and_install(
-            move |chunk, total| {
-                downloaded = downloaded.saturating_add(chunk as u64);
-                let payload = UpdateProgress {
-                    downloaded,
-                    total: total.unwrap_or(0),
-                };
-                let _ = app_for_progress.emit("update-progress", payload);
-            },
-            || {},
-        )
-        .await;
+    let result = crate::actions::install_update_with_progress(app.clone(), move |chunk, total| {
+        downloaded = downloaded.saturating_add(chunk);
+        let payload = UpdateProgress {
+            downloaded,
+            // total is None when the server doesn't send Content-Length;
+            // the JS side treats 0 as "indeterminate".
+            total: total.unwrap_or(0),
+        };
+        let _ = app_for_progress.emit("update-progress", payload);
+    })
+    .await;
 
     match result {
-        Ok(()) => {
+        Ok(true) => {
             let _ = app.emit("update-install-status", "Installing… restarting.");
             app.restart();
         }
+        // Ok(false): no update available — surface that to JS as a
+        // non-error so the UI shows "up to date" rather than a failure.
+        Ok(false) => {}
         Err(e) => {
             let msg = format!("Install failed: {}", e);
             let _ = app.emit("update-install-status", &msg);
-            Err(msg)
+            return Err(msg);
         }
     }
+    result
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -766,7 +756,12 @@ pub async fn set_crop(
 
     let snapshot = {
         let mut config = state.config.lock().map_err(|e| e.to_string())?;
-        config.crop = Some(CropConfig { x, y, width, height });
+        config.crop = Some(CropConfig {
+            x,
+            y,
+            width,
+            height,
+        });
         save_config(&state, &config);
         config.clone()
     };
@@ -856,7 +851,11 @@ mod tests {
         // 2000x500 → 16:9 should keep height and pull width to 16/9*500 ≈ 889
         let (w, h) = aspect_resize(2000, 500, 16, 9);
         assert_eq!(h, 500, "height must be preserved when window is too wide");
-        assert!((w - 889).abs() <= 1, "width should shrink to ~889, got {}", w);
+        assert!(
+            (w - 889).abs() <= 1,
+            "width should shrink to ~889, got {}",
+            w
+        );
         assert!(w < 2000, "width should shrink, not grow");
     }
 
@@ -865,7 +864,11 @@ mod tests {
         // 400x1200 → 16:9 should keep width and pull height to 9/16*400 = 225
         let (w, h) = aspect_resize(400, 1200, 16, 9);
         assert_eq!(w, 400, "width must be preserved when window is too tall");
-        assert!((h - 225).abs() <= 1, "height should shrink to ~225, got {}", h);
+        assert!(
+            (h - 225).abs() <= 1,
+            "height should shrink to ~225, got {}",
+            h
+        );
         assert!(h < 1200, "height should shrink, not grow");
     }
 

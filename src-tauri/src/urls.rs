@@ -140,4 +140,20 @@ mod tests {
         assert!(!urls_match("not a url", "https://example.com/"));
         assert!(urls_match("not a url", "not a url"));
     }
+
+    /// Table-driven check against the shared Rust/JS truth table in
+    /// [`crate::url_fixtures`]. Every case there must agree with the Rust
+    /// implementation; the parallel JS test in `js/urltest.test.mjs`
+    /// asserts the same cases against the JS mirror so the two can't
+    /// silently drift (they previously did, on userinfo handling).
+    #[test]
+    fn urls_match_matches_shared_truth_table() {
+        for (i, (a, b, expected)) in crate::url_fixtures::URL_MATCH_CASES.iter().enumerate() {
+            let got = urls_match(a, b);
+            assert_eq!(
+                got, *expected,
+                "case #{i}: urls_match({a:?}, {b:?}) expected {expected}, got {got}"
+            );
+        }
+    }
 }

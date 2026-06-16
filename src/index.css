@@ -1,0 +1,296 @@
+/* Shares the control strip's design language (injection.js):
+   warm-orange accent on neutral dark grays, the same easing
+   curves, and the same radius scale. Keep the two in sync. */
+:root {
+    --fv-swift: cubic-bezier(0.4, 0, 0.2, 1);
+    --fv-out:   cubic-bezier(0.22, 0.9, 0.36, 1.05);
+
+    --bg-color: #1a1a1f;
+    --glass-bg: rgba(40, 40, 46, 0.6);
+    --glass-border: rgba(255, 255, 255, 0.1);
+    --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    --text-primary: #ffffff;
+    --text-secondary: rgba(255, 255, 255, 0.6);
+    --accent: rgba(200, 140, 80, 1);
+    --accent-hover: rgba(210, 150, 90, 1);
+    --accent-glow: rgba(220, 170, 110, 0.55);
+    --input-bg: rgba(26, 26, 31, 0.5);
+    --input-focus-border: rgba(220, 170, 110, 0.55);
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    user-select: none;
+}
+
+input {
+    user-select: auto;
+}
+
+::selection {
+    background: rgba(200, 140, 80, 0.55);
+    color: #fff;
+}
+
+body {
+    background-color: var(--bg-color);
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    overflow: hidden;
+    position: relative;
+}
+
+.ambient-bg {
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle at 50% 50%, rgba(200, 140, 80, 0.13), transparent 40%),
+                radial-gradient(circle at 80% 20%, rgba(220, 170, 110, 0.10), transparent 40%),
+                radial-gradient(circle at 20% 80%, rgba(160, 110, 70, 0.10), transparent 40%);
+    animation: rotateBg 30s linear infinite;
+    z-index: -1;
+    pointer-events: none;
+}
+
+@keyframes rotateBg {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.container {
+    width: 90%;
+    max-width: 480px;
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    padding: 32px;
+    box-shadow: var(--glass-shadow);
+    text-align: center;
+    animation: fadeIn 0.5s var(--fv-out);
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.header {
+    margin-bottom: 24px;
+}
+
+.logo-icon {
+    width: 48px;
+    height: 48px;
+    margin: 0 auto 16px;
+    background: linear-gradient(135deg, rgba(200, 140, 80, 0.95), rgba(220, 170, 110, 0.85));
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 14px -2px var(--accent-glow);
+}
+
+.logo-icon svg {
+    width: 24px;
+    height: 24px;
+    fill: none;
+    stroke: white;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+h1 {
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin-bottom: 8px;
+    background: linear-gradient(to right, #fff, #d9cfc4);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+p.subtitle {
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.input-group {
+    position: relative;
+    margin-bottom: 16px;
+}
+
+.url-input {
+    width: 100%;
+    padding: 14px 16px 14px 44px;
+    font-size: 15px;
+    border: 1px solid var(--glass-border);
+    border-radius: 10px;
+    background: var(--input-bg);
+    color: var(--text-primary);
+    caret-color: var(--accent);
+    outline: none;
+    transition:
+        background 0.18s var(--fv-swift),
+        border-color 0.2s var(--fv-out),
+        box-shadow 0.24s var(--fv-out);
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.url-input:focus {
+    border-color: var(--input-focus-border);
+    background: rgba(26, 26, 31, 0.7);
+    box-shadow: 0 0 0 3px rgba(200, 140, 80, 0.14), inset 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.url-input::placeholder {
+    color: rgba(255, 255, 255, 0.45);
+}
+
+.input-icon {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 18px;
+    height: 18px;
+    color: rgba(255, 255, 255, 0.45);
+    pointer-events: none;
+}
+
+.btn {
+    width: 100%;
+    padding: 14px 24px;
+    font-size: 15px;
+    font-weight: 600;
+    border: none;
+    border-radius: 10px;
+    background: linear-gradient(135deg, rgba(200, 140, 80, 0.95), rgba(220, 170, 110, 0.85));
+    color: #fff;
+    cursor: pointer;
+    transition:
+        background 0.18s var(--fv-swift),
+        transform 0.16s var(--fv-out),
+        box-shadow 0.22s var(--fv-out);
+    box-shadow: 0 4px 12px -2px rgba(200, 140, 80, 0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.btn:hover {
+    background: linear-gradient(135deg, var(--accent-hover), rgba(230, 180, 120, 0.92));
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px -2px var(--accent-glow);
+}
+
+.btn:active {
+    transform: translateY(1px);
+    box-shadow: 0 2px 8px -2px rgba(200, 140, 80, 0.35);
+}
+
+.btn:focus-visible {
+    outline: 2px solid rgba(200, 140, 80, 0.75);
+    outline-offset: 2px;
+}
+
+.btn svg {
+    width: 18px;
+    height: 18px;
+    transition: transform 0.2s var(--fv-out);
+}
+
+.btn:hover svg {
+    transform: translateX(4px);
+}
+
+.shortcuts {
+    margin-top: 32px;
+    text-align: left;
+    background: rgba(26, 26, 31, 0.35);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 20px;
+}
+
+.shortcuts h3 {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-secondary);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.shortcuts h3::before {
+    content: '';
+    display: block;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--accent);
+}
+
+.shortcut-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+}
+
+.shortcut {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.75);
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.shortcut:last-child {
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+.kbd-group {
+    display: flex;
+    gap: 4px;
+}
+
+kbd {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 11px;
+    color: #ffffff;
+    box-shadow: 0 2px 0 rgba(0,0,0,0.2);
+}
+
+/* Respect the OS "reduce motion" preference: stop the infinite
+   ambient-background rotation and collapse entrance/transition
+   durations (WCAG 2.3.3). */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
