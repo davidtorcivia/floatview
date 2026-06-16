@@ -38,6 +38,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      # Tauri's Linux backend (tao/wry -> gtk/webkit2gtk/gobject) needs
+      # system headers + pkg-config files to compile even for clippy/test.
+      # The Windows/macOS build jobs use native backends and don't need
+      # these; the ubuntu lint job does. This is Tauri's documented set.
+      - name: Install Tauri Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libglib2.0-dev libssl-dev
+
       - name: Install Rust stable (with fmt + clippy)
         uses: dtolnay/rust-toolchain@stable
         with:
